@@ -1,3 +1,4 @@
+import type React from 'react';
 import { useState } from 'react';
 import { supabase } from '../../lib/supabase';
 import { mapUserSettings, type UserSettingsRow } from '../../lib/dbMappers';
@@ -9,9 +10,10 @@ const BUTTON_CLASS =
 
 interface ThemeToggleProps {
   className?: string;
+  style?: React.CSSProperties;
 }
 
-export function ThemeToggle({ className }: ThemeToggleProps) {
+export function ThemeToggle({ className, style }: ThemeToggleProps) {
   const { state, dispatch } = useApp();
   const [isSaving, setIsSaving] = useState(false);
 
@@ -67,6 +69,7 @@ export function ThemeToggle({ className }: ThemeToggleProps) {
     <button
       type="button"
       className={combinedClass}
+      style={style}
       onClick={() => void handleClick()}
       disabled={isSaving}
       aria-label={label}

@@ -17,7 +17,7 @@ export function SimplifyPopup({ paragraph, onUseOriginal, onUseModified, onDismi
   const [versionA, setVersionA] = useState('');
   const [versionB, setVersionB] = useState('');
   const activeSource =
-    paragraph.activeVersion === 'modified' && paragraph.modified ? paragraph.modified : paragraph.original;
+    paragraph.activeVersion === 'modified' ? (paragraph.modified ?? paragraph.original) : paragraph.original;
 
   useEffect(() => {
     let isCancelled = false;

@@ -1,7 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { callAI } from '../../ai/adapter';
 import { supabase } from '../../lib/supabase';
-import { mapUserSettings, READER_FONT_PX_DEFAULT, READER_FONT_PX_MAX, READER_FONT_PX_MIN, type UserSettingsRow } from '../../lib/dbMappers';
+import { mapUserSettings, READER_FONT_PX_DEFAULT, READER_FONT_PX_MAX, READER_FONT_PX_MIN, READER_MARKDOWN_H2_OFFSET_PX, OUTLINE_FONT_PX_DEFAULT, OUTLINE_FONT_PX_MIN, OUTLINE_FONT_PX_MAX, OUTLINE_FONT_LS_KEY, type UserSettingsRow } from '../../lib/dbMappers';
 import { isReaderFontColumnUnavailableError, isThemeColumnUnavailableError, isTtsColumnUnavailableError } from '../../lib/themePersist';
 import { writeLocalTtsVoiceUri, readLocalTtsVoiceUri } from '../../lib/ttsVoiceLocalFallback';
 import {
@@ -32,6 +32,14 @@ export function SettingsPanel() {
   const [youtubeUrl, setYoutubeUrl] = useState('');
   const [ttsVoiceUri, setTtsVoiceUri] = useState('');
   const [readerFontPx, setReaderFontPx] = useState(READER_FONT_PX_DEFAULT);
+  const [outlineFontPx, setOutlineFontPx] = useState(() => {
+    try {
+      const stored = localStorage.getItem(OUTLINE_FONT_LS_KEY);
+      return stored ? Math.max(OUTLINE_FONT_PX_MIN, Math.min(OUTLINE_FONT_PX_MAX, Number(stored))) : OUTLINE_FONT_PX_DEFAULT;
+    } catch {
+      return OUTLINE_FONT_PX_DEFAULT;
+    }
+  });
   const [browserVoices, setBrowserVoices] = useState<SpeechSynthesisVoice[]>([]);
   const [isKeyVisible, setIsKeyVisible] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -208,6 +216,10 @@ export function SettingsPanel() {
     }
 
     writeLocalTtsVoiceUri(ttsVoiceUri.trim() || null);
+    try {
+      localStorage.setItem(OUTLINE_FONT_LS_KEY, String(outlineFontPx));
+      document.documentElement.style.setProperty('--study-helper-outline-font', `${outlineFontPx}px`);
+    } catch { /* ignore quota / private mode */ }
 
     const { data } = await supabase.from('user_settings').select('*').eq('user_id', sessionUser.id).single();
 
@@ -285,10 +297,11 @@ export function SettingsPanel() {
               <ThemeToggle />
             </div>
             <label className="mt-4 block text-sm font-medium text-gray-700 dark:text-gray-300" htmlFor="reader-font">
-              Reader font size
+              Reader text size
             </label>
             <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-              Chapter reader body text ({READER_FONT_PX_MIN}–{READER_FONT_PX_MAX}px).
+              Scales all content text ({READER_FONT_PX_MIN}–{READER_FONT_PX_MAX}px): reading area, topic listings, and
+              cards. The app header stays fixed. Markdown ## headings are {READER_MARKDOWN_H2_OFFSET_PX}px larger.
             </p>
             <input
               id="reader-font"
@@ -301,6 +314,29 @@ export function SettingsPanel() {
               className="mt-2 w-full accent-indigo-600"
             />
             <p className="mt-1 text-xs text-gray-600 dark:text-gray-400">{readerFontPx}px</p>
+
+            <label className="mt-4 block text-sm font-medium text-gray-700 dark:text-gray-300" htmlFor="outline-font">
+              "On this page" font size
+            </label>
+            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+              Controls text size of the chapter outline sidebar ({OUTLINE_FONT_PX_MIN}–{OUTLINE_FONT_PX_MAX}px). Smaller
+              values fit more headings on screen without scrolling.
+            </p>
+            <input
+              id="outline-font"
+              type="range"
+              min={OUTLINE_FONT_PX_MIN}
+              max={OUTLINE_FONT_PX_MAX}
+              step={1}
+              value={outlineFontPx}
+              onChange={(e) => {
+                const v = Number(e.target.value);
+                setOutlineFontPx(v);
+                document.documentElement.style.setProperty('--study-helper-outline-font', `${v}px`);
+              }}
+              className="mt-2 w-full accent-indigo-600"
+            />
+            <p className="mt-1 text-xs text-gray-600 dark:text-gray-400">{outlineFontPx}px</p>
           </div>
 
           <div className="mt-8 border-t border-gray-200 pt-6 dark:border-gray-800">

@@ -34,6 +34,11 @@ type PopupState =
   | { kind: 'simplify'; paragraph: Paragraph }
   | { kind: 'pin'; paragraphId: string; initialNote: string };
 
+type ChapterLoadOptions = {
+  /** When false, keep the reader mounted and only merge fresh data (avoids scroll jump). */
+  showChapterSpinner?: boolean;
+};
+
 function findParagraphIdFromSelection(): string | null {
   const sel = window.getSelection();
   if (!sel || sel.rangeCount === 0) return null;
@@ -72,9 +77,12 @@ export function ChapterReadingView() {
     writeStoredReadAlongSkipIncrement(value);
   }, []);
 
-  const loadAll = useCallback(async () => {
+  const loadAll = useCallback(async (options?: ChapterLoadOptions) => {
     if (!state.user || !bookId || !chapterId) return;
-    setIsLoading(true);
+    const showChapterSpinner = options?.showChapterSpinner ?? true;
+    if (showChapterSpinner) {
+      setIsLoading(true);
+    }
 
     const { data: bookRow } = await supabase
       .from('books')
@@ -99,15 +107,23 @@ export function ChapterReadingView() {
 
     if (!bookRow || !chapterRow) {
       navigate(`/topic/${topicId}`, { replace: true });
-      setIsLoading(false);
+      if (showChapterSpinner) {
+        setIsLoading(false);
+      }
       return;
     }
 
     setBook(mapBook(bookRow as BookRow));
     setChapter(mapChapter(chapterRow as ChapterRow));
     setParagraphs((paragraphRows ?? []).map((row) => mapParagraph(row as ParagraphRow)));
-    setIsLoading(false);
+    if (showChapterSpinner) {
+      setIsLoading(false);
+    }
   }, [state.user, bookId, chapterId, navigate, topicId]);
+
+  const refreshChapterData = useCallback(() => {
+    void loadAll({ showChapterSpinner: false });
+  }, [loadAll]);
 
   useEffect(() => {
     loadAll();
@@ -243,6 +259,39 @@ export function ChapterReadingView() {
     clearSelection();
   }
 
+  const handleExplainParagraph = useCallback(
+    async (p: Paragraph) => {
+      if (!state.settings) return;
+      const text = paragraphPlain(p).trim();
+      if (!text) return;
+      try {
+        const explanation = await explain(text, state.settings);
+        setPopup({ kind: 'explain', paragraphId: p.id, selectionText: text, explanation });
+      } catch {
+        /* surfaced via hook */
+      }
+    },
+    [explain, state.settings],
+  );
+
+  const handleSimplifyParagraph = useCallback((p: Paragraph) => {
+    setPopup({ kind: 'simplify', paragraph: p });
+  }, []);
+
+  const handlePinParagraph = useCallback((p: Paragraph) => {
+    setPopup({ kind: 'pin', paragraphId: p.id, initialNote: p.pinnedNote ?? '' });
+  }, []);
+
+  const handleReadAloudParagraph = useCallback(
+    (p: Paragraph) => {
+      if (!readAlong.isSupported) return;
+      const idx = sortedParagraphs.findIndex((x) => x.id === p.id);
+      if (idx < 0) return;
+      readAlong.playFrom(idx, 0);
+    },
+    [readAlong, sortedParagraphs],
+  );
+
   async function handlePinExplanation() {
     if (!state.user || !popup || popup.kind !== 'explain') return;
     const { error } = await supabase
@@ -252,7 +301,7 @@ export function ChapterReadingView() {
       .eq('user_id', state.user.id);
     if (!error) {
       setPopup(null);
-      await loadAll();
+      await loadAll({ showChapterSpinner: false });
     }
   }
 
@@ -265,7 +314,7 @@ export function ChapterReadingView() {
       .eq('user_id', state.user.id);
     if (!error) {
       setPopup(null);
-      await loadAll();
+      await loadAll({ showChapterSpinner: false });
     }
   }
 
@@ -278,7 +327,7 @@ export function ChapterReadingView() {
       .eq('user_id', state.user.id);
     if (!error) {
       setPopup(null);
-      await loadAll();
+      await loadAll({ showChapterSpinner: false });
     }
   }
 
@@ -295,7 +344,19 @@ export function ChapterReadingView() {
       .eq('user_id', state.user.id);
     if (!error) {
       setPopup(null);
-      await loadAll();
+      await loadAll({ showChapterSpinner: false });
+    }
+  }
+
+  async function handleDeleteParagraph(paragraphId: string) {
+    if (!state.user) return;
+    const { error } = await supabase
+      .from('paragraphs')
+      .delete()
+      .eq('id', paragraphId)
+      .eq('user_id', state.user.id);
+    if (!error) {
+      await loadAll({ showChapterSpinner: false });
     }
   }
 
@@ -314,8 +375,6 @@ export function ChapterReadingView() {
     }
     setIsPageEditMode(true);
   }
-
-  const articleTypographyStyle = { fontSize: 'var(--study-helper-reader-font, 18px)' };
 
   if (!state.user) {
     return <AuthenticatedSessionFallback />;
@@ -336,14 +395,14 @@ export function ChapterReadingView() {
     <div className="min-h-screen bg-gray-50 pb-24 dark:bg-gray-950">
       <AppHeader />
 
-      <div className="mx-auto max-w-6xl px-4 py-6">
-        <div className="flex flex-col gap-6 lg:grid lg:grid-cols-[minmax(11rem,14rem)_minmax(0,42rem)] lg:justify-center lg:gap-10">
-          <aside className="order-2 lg:order-1 lg:justify-self-end lg:pr-2">
+      <div className="w-full px-2 py-4 sm:px-3">
+        <div className="flex flex-col gap-4 lg:grid lg:grid-cols-[auto_1fr] lg:gap-4">
+          <aside className="order-2 lg:order-1">
             <ChapterOutlineNav items={outlineItems} />
           </aside>
 
-          <div className="order-1 min-w-0 lg:order-2 lg:w-full">
-            <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between lg:gap-8">
+          <div className="order-1 min-w-0 lg:order-2">
+            <div className="flex flex-wrap items-start justify-between gap-3">
               <div className="flex min-w-0 flex-1 flex-wrap items-start gap-3">
                 <button
                   type="button"
@@ -369,15 +428,19 @@ export function ChapterReadingView() {
                   }`}
                   onClick={handleTogglePageEdit}
                 >
-                  {isPageEditMode ? 'Done editing' : 'Edit on page'}
+                  {isPageEditMode ? 'Done editing' : 'Edit'}
                 </button>
                 <button
                   type="button"
-                  className="rounded-lg p-2 text-gray-600 hover:bg-gray-200 dark:text-gray-400 dark:hover:bg-gray-800"
+                  className="flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-2.5 py-1.5 text-sm text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800"
                   aria-label="Settings"
                   onClick={() => dispatch({ type: 'SET_SETTINGS_PANEL', payload: true })}
                 >
-                  <span className="text-sm font-medium">Settings</span>
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden="true">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                  </svg>
+                  <span className="hidden sm:inline">Settings</span>
                 </button>
               </div>
             </div>
@@ -385,19 +448,47 @@ export function ChapterReadingView() {
             <article
               ref={readerAreaRef}
               data-reader-main
-              style={articleTypographyStyle}
-              className="mt-8 space-y-2 rounded-xl border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-gray-900"
+              className="mt-8 space-y-2 rounded-2xl border border-amber-100/80 bg-[#faf8f4] p-6 shadow-md sm:p-8 dark:border-stone-700/60 dark:bg-[#1e1c18]"
+              style={{
+                fontSize: 'var(--study-helper-reader-font, 18px)',
+                fontFamily: "'Lora', Georgia, 'Times New Roman', serif",
+                lineHeight: '1.8',
+              }}
             >
               {sortedParagraphs.map((p) => (
                 <ParagraphBlock
                   key={p.id}
                   paragraph={p}
-                  onUpdated={loadAll}
+                  onUpdated={refreshChapterData}
+                  onDeleteParagraph={() => {
+                    void handleDeleteParagraph(p.id);
+                  }}
                   isReadAlongActive={readAlong.activeParagraphId === p.id}
                   readAlongHighlight={readAlong.highlight}
                   isPageEditMode={isPageEditMode}
                   isReadAlongRunning={readAlong.isRunning}
                   onClosePageEdit={handleClosePageEdit}
+                  isStudyRailVisible={!isPageEditMode}
+                  hasStudySettings={Boolean(state.settings)}
+                  isStudyRailAiBusy={isExplainLoading}
+                  canStudyReadAloud={readAlong.isSupported}
+                  isStudyReadAloudDisabled={!readAlong.isSupported || readAlong.isRunning}
+                  onStudyExplain={() => {
+                    void handleExplainParagraph(p);
+                  }}
+                  onStudySimplify={() => {
+                    handleSimplifyParagraph(p);
+                  }}
+                  onStudyPin={() => {
+                    handlePinParagraph(p);
+                  }}
+                  onStudyReadAloud={
+                    readAlong.isSupported
+                      ? () => {
+                          handleReadAloudParagraph(p);
+                        }
+                      : undefined
+                  }
                 />
               ))}
               {paragraphs.length === 0 && (

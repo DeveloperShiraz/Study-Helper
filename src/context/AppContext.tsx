@@ -8,7 +8,7 @@ import {
 } from 'react';
 import type { User } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
-import { mapUserSettings, type UserSettingsRow } from '../lib/dbMappers';
+import { mapUserSettings, OUTLINE_FONT_PX_DEFAULT, OUTLINE_FONT_LS_KEY, OUTLINE_FONT_PX_MIN, OUTLINE_FONT_PX_MAX, type UserSettingsRow } from '../lib/dbMappers';
 import { readStoredTheme, THEME_STORAGE_KEY } from '../lib/theme';
 import type { UserSettings, MasterTopic, Book, Chapter, ThemePreference } from '../types';
 
@@ -104,6 +104,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const px = state.settings?.readerFontPx ?? 18;
     document.documentElement.style.setProperty('--study-helper-reader-font', `${px}px`);
   }, [state.settings?.readerFontPx]);
+
+  useLayoutEffect(() => {
+    try {
+      const stored = localStorage.getItem(OUTLINE_FONT_LS_KEY);
+      const px = stored
+        ? Math.max(OUTLINE_FONT_PX_MIN, Math.min(OUTLINE_FONT_PX_MAX, Number(stored)))
+        : OUTLINE_FONT_PX_DEFAULT;
+      document.documentElement.style.setProperty('--study-helper-outline-font', `${px}px`);
+    } catch {
+      document.documentElement.style.setProperty('--study-helper-outline-font', `${OUTLINE_FONT_PX_DEFAULT}px`);
+    }
+  }, []);
 
   useEffect(() => {
     const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {

@@ -6,7 +6,10 @@ interface VersionToggleProps {
 }
 
 export function VersionToggle({ paragraph, onSelect }: VersionToggleProps) {
-  if (!paragraph.modified) return null;
+  /** `modified` may be `""` after clearing text — still a real saved branch vs `null` (never edited). */
+  if (paragraph.modified === null) {
+    return null;
+  }
 
   const baseBtn =
     'rounded-md px-2 py-1 text-xs font-medium ring-1 ring-gray-200 transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:ring-gray-600';

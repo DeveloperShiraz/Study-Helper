@@ -4,7 +4,7 @@ import { collectReadAlongDomSegments, queryReadAlongMarkdownRoot } from './readA
 
 /** Markdown-only plain (fallback when the paragraph DOM is not available). */
 export function paragraphPlain(p: Paragraph): string {
-  const raw = p.activeVersion === 'modified' && p.modified ? p.modified : p.original;
+  const raw = p.activeVersion === 'modified' ? (p.modified ?? p.original) : p.original;
   return markdownToSpeakableText(raw);
 }
 

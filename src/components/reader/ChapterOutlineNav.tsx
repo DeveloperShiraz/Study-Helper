@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import type { ChapterOutlineItem } from '../../lib/chapterOutline';
 import {
   queryChapterHeadingByLabelInReader,
@@ -9,20 +10,15 @@ interface ChapterOutlineNavProps {
   items: ChapterOutlineItem[];
 }
 
-const outlineNavClass =
-  'sticky top-24 max-h-[calc(100vh-8rem)] overflow-y-auto rounded-xl border border-gray-200 bg-white p-3 text-sm shadow-sm dark:border-gray-800 dark:bg-gray-900';
-const outlineHeadingClass = 'text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400';
-const outlineButtonBaseClass =
-  'w-full rounded-md px-2 py-1.5 text-left text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-800';
-const mobileDetailsClass =
-  'mb-4 rounded-xl border border-gray-200 bg-white p-3 shadow-sm dark:border-gray-800 dark:bg-gray-900 lg:hidden';
-
 const SCROLL_OUTLINE_MAX_ATTEMPTS = 40;
 const SCROLL_OUTLINE_ATTEMPT_MS = 100;
 
+function itemKey(item: ChapterOutlineItem): string {
+  return `${item.paragraphId}-${item.headingIndex}`;
+}
+
 function scrollToChapterHeading(paragraphId: string, headingIndex: number, label: string): void {
   let attempts = 0;
-
   function tryScroll(): void {
     const el =
       queryChapterHeadingElement(paragraphId, headingIndex) ?? queryChapterHeadingByLabelInReader(label);
@@ -36,86 +32,99 @@ function scrollToChapterHeading(paragraphId: string, headingIndex: number, label
       window.setTimeout(tryScroll, SCROLL_OUTLINE_ATTEMPT_MS);
     }
   }
-
   tryScroll();
 }
 
 interface OutlineNavRowProps {
   item: ChapterOutlineItem;
-  outlineButtonBaseClass: string;
+  isActive: boolean;
+  onNavigate: (key: string) => void;
 }
 
-function OutlineNavRow({ item, outlineButtonBaseClass }: OutlineNavRowProps) {
-  const indentPx = Math.max(0, item.level - 2) * 10;
-  const listRowStyle = { paddingLeft: indentPx };
-  const isSmallHeading = item.level >= 3;
-  const lineButtonClass = isSmallHeading
-    ? `${outlineButtonBaseClass} cursor-pointer text-[13px] text-gray-600 dark:text-gray-300`
-    : `${outlineButtonBaseClass} cursor-pointer`;
-
-  function handleActivate(): void {
-    scrollToChapterHeading(item.paragraphId, item.headingIndex, item.label);
-  }
+function OutlineNavRow({ item, isActive, onNavigate }: OutlineNavRowProps) {
+  const key = itemKey(item);
 
   return (
-    <li style={listRowStyle}>
-      <button type="button" className={lineButtonClass} onClick={handleActivate}>
+    <li className="break-inside-avoid mb-0.5">
+      <button
+        type="button"
+        data-outline-key={key}
+        onClick={() => {
+          onNavigate(key);
+          scrollToChapterHeading(item.paragraphId, item.headingIndex, item.label);
+        }}
+        className={[
+          'w-full rounded-md px-2 py-1 text-left leading-snug transition-all duration-150',
+          isActive
+            ? 'border border-yellow-400/70 bg-yellow-300/90 font-semibold text-yellow-900 dark:border-yellow-500/60 dark:bg-yellow-400/20 dark:text-yellow-200'
+            : 'border border-stone-200 bg-stone-50/80 text-stone-600 hover:border-amber-300/80 hover:bg-amber-50 hover:text-amber-900 dark:border-stone-700/70 dark:bg-stone-800/40 dark:text-stone-400 dark:hover:border-amber-600/50 dark:hover:bg-amber-950/30 dark:hover:text-amber-200',
+        ].join(' ')}
+        style={{
+          boxShadow: isActive
+            ? '0 0 0 1px #fbbf24, 0 0 10px rgba(251,191,36,0.5), 0 0 24px rgba(251,191,36,0.2)'
+            : undefined,
+        }}
+      >
         {item.label}
       </button>
     </li>
   );
 }
 
+/** Offset from viewport top (px) used to decide which heading is "active" while scrolling. */
+const SCROLL_SPY_OFFSET = 130;
+
 export function ChapterOutlineNav({ items }: ChapterOutlineNavProps) {
-  const emptyHint = (
-    <p className="text-xs text-gray-500 dark:text-gray-400">
-      No Markdown headings found. Start lines with ## or ### in the chapter text (for example after AI PDF import) to
-      build this outline.
-    </p>
-  );
+  const [activeKey, setActiveKey] = useState<string | null>(null);
 
-  if (items.length === 0) {
-    return (
-      <>
-        <details className={mobileDetailsClass}>
-          <summary className="cursor-pointer text-sm font-medium text-gray-800 dark:text-gray-100">
-            Jump to section
-          </summary>
-          <div className="mt-2 border-t border-gray-100 pt-2 dark:border-gray-800">{emptyHint}</div>
-        </details>
-        <div className={`${outlineNavClass} hidden lg:block`}>
-          <p className={outlineHeadingClass}>On this page</p>
-          <div className="mt-2">{emptyHint}</div>
-        </div>
-      </>
-    );
-  }
+  useEffect(() => {
+    if (items.length === 0) return;
 
-  const listContent = (
-    <ul className="mt-2 space-y-0.5">
-      {items.map((item) => (
-        <OutlineNavRow
-          key={`${item.paragraphId}-${item.headingIndex}`}
-          item={item}
-          outlineButtonBaseClass={outlineButtonBaseClass}
-        />
-      ))}
-    </ul>
-  );
+    function updateActive() {
+      const threshold = window.scrollY + SCROLL_SPY_OFFSET;
+      let found: string | null = null;
+      for (const item of items) {
+        const el =
+          queryChapterHeadingElement(item.paragraphId, item.headingIndex) ??
+          queryChapterHeadingByLabelInReader(item.label);
+        if (!el) continue;
+        if (el.getBoundingClientRect().top + window.scrollY <= threshold) {
+          found = itemKey(item);
+        }
+      }
+      setActiveKey(found);
+    }
+
+    updateActive();
+    window.addEventListener('scroll', updateActive, { passive: true });
+    return () => window.removeEventListener('scroll', updateActive);
+  }, [items]);
+
+  if (items.length === 0) return null;
 
   return (
-    <>
-      <details className={mobileDetailsClass}>
-        <summary className="cursor-pointer text-sm font-medium text-gray-800 dark:text-gray-100">
-          Jump to section
-        </summary>
-        <div className="mt-2 border-t border-gray-100 pt-2 dark:border-gray-800">{listContent}</div>
-      </details>
-
-      <nav aria-label="Chapter outline" className={`${outlineNavClass} hidden lg:block`}>
-        <p className={outlineHeadingClass}>On this page</p>
-        {listContent}
-      </nav>
-    </>
+    <nav
+      aria-label="Chapter outline"
+      className="sticky top-20 rounded-xl border border-amber-100/80 bg-[#faf8f4] p-3 shadow-sm dark:border-stone-700/60 dark:bg-[#1e1c18]"
+      style={{
+        fontSize: 'var(--study-helper-outline-font, 12px)',
+        fontFamily: "'Lora', Georgia, 'Times New Roman', serif",
+      }}
+    >
+      <p className="mb-2 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-widest text-amber-700/80 dark:text-amber-500/80">
+        <span className="inline-block h-3 w-0.5 rounded-full bg-amber-400/70 dark:bg-amber-500/60" aria-hidden="true" />
+        On this page
+      </p>
+      <ul className="space-y-0.5">
+        {items.map((item) => (
+          <OutlineNavRow
+            key={itemKey(item)}
+            item={item}
+            isActive={itemKey(item) === activeKey}
+            onNavigate={setActiveKey}
+          />
+        ))}
+      </ul>
+    </nav>
   );
 }

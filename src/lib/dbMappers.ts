@@ -129,6 +129,14 @@ export const READER_FONT_PX_MIN = 12;
 export const READER_FONT_PX_MAX = 32;
 export const READER_FONT_PX_DEFAULT = 18;
 
+/** Markdown `##` headings (h2): reader base font size + this many pixels. */
+export const READER_MARKDOWN_H2_OFFSET_PX = 8;
+
+export const OUTLINE_FONT_PX_MIN = 10;
+export const OUTLINE_FONT_PX_MAX = 18;
+export const OUTLINE_FONT_PX_DEFAULT = 13;
+export const OUTLINE_FONT_LS_KEY = 'study_helper_outline_font_px';
+
 function readerFontPxFromRow(row: UserSettingsRow): number {
   const raw = row.reader_font_px;
   if (typeof raw !== 'number' || !Number.isFinite(raw)) {

@@ -99,6 +99,18 @@ export function MasterTopicPage() {
     <div className="min-h-screen bg-gray-50 dark:bg-gray-950">
       <AppHeader />
       <div className="mx-auto max-w-5xl px-4 py-6">
+        <div className="mb-4">
+          <button
+            type="button"
+            onClick={() => navigate('/home')}
+            className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-sm text-gray-500 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-100"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+              <path fillRule="evenodd" d="M9.707 16.707a1 1 0 01-1.414 0l-6-6a1 1 0 010-1.414l6-6a1 1 0 011.414 1.414L5.414 9H17a1 1 0 110 2H5.414l4.293 4.293a1 1 0 010 1.414z" clipRule="evenodd" />
+            </svg>
+            All topics
+          </button>
+        </div>
         <div className="flex flex-wrap items-center justify-between gap-3">
           <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">{topic.title}</h1>
           <div className="flex flex-wrap items-center gap-2">

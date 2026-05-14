@@ -26,6 +26,9 @@ Thumbs.db
 # Cursor IDE — local rules / agent state (canonical docs: PROJECT_CONTEXT.md, docs/)
 .cursor
 
+#Claude Code - Local rules
+.claude
+
 # Supabase CLI (local)
 supabase/.temp
 .branches
