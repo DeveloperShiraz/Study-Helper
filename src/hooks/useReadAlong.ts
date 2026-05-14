@@ -5,14 +5,12 @@ import { readAlongPlainForParagraph } from '../lib/readAlongParagraphPlain';
 import { clearReadAlongCssHighlight } from '../lib/readAlongDomText';
 
 /** Lower bound so highlight can keep up when pace estimate is cold. */
-const READ_ALONG_MIN_PACE_CHARS_PER_MS = 0.014;
-/** Forward bias — boundary events trail heard audio. */
-const READ_ALONG_PACE_BOOST = 1.22;
-/** Wall-clock extrapolation vs measured pace (TTS often runs ahead of events). */
-const READ_ALONG_WALL_CLOCK_SEC_GAIN = 1.18;
-/** Scale `elapsedTime` → heard chars when the engine reports it. */
-const READ_ALONG_HEARD_FROM_ELAPSED_GAIN = 1.14;
-const READ_ALONG_CHARS_PER_SEC_INITIAL = 18;
+const READ_ALONG_MIN_PACE_CHARS_PER_MS = 0.012;
+/** Forward bias — allows RAF loop to advance past the middle of a word between events. */
+const READ_ALONG_PACE_BOOST = 1.15;
+/** Wall-clock multiplier — kept at 1.0 since utterCharsPerSecRef now tracks cumulative rate accurately. */
+const READ_ALONG_WALL_CLOCK_SEC_GAIN = 1.0;
+const READ_ALONG_CHARS_PER_SEC_INITIAL = 16;
 
 export { paragraphPlain, readAlongPlainForParagraph } from '../lib/readAlongParagraphPlain';
 
@@ -119,7 +117,7 @@ export function useReadAlong(
   /** Heard progress within the current utterance string (exclusive end index). */
   const readAlongSyncRef = useRef({ time: 0, heardExclusiveUtter: 0 });
   /** Last boundary-reported word end in utterance coords — pace estimation only. */
-  const paceAnchorRef = useRef({ time: 0, endInUtter: 0 });
+  const paceAnchorRef = useRef({ time: 0, charIndex: 0 });
   const utterHighlightRafRef = useRef<number | null>(null);
   const resumeHighlightDriverRef = useRef<(() => void) | null>(null);
   const lastHighlightKeyRef = useRef('');
@@ -128,7 +126,6 @@ export function useReadAlong(
   const activeUtterLenRef = useRef(0);
   const utterWallStartRef = useRef(0);
   const utterCharsPerSecRef = useRef(READ_ALONG_CHARS_PER_SEC_INITIAL);
-  const lastElapsedAudioRef = useRef<{ elapsed: number; endInUtter: number } | null>(null);
   const voiceUriRef = useRef<string | null>(options?.voiceUri ?? null);
   /** When the user leaves Voice on "Default", lock onto one voiceURI for the whole session so it does not swap per paragraph. */
   const stickyDefaultVoiceUriRef = useRef<string | null>(null);
@@ -223,7 +220,7 @@ export function useReadAlong(
       indexRef.current = safeIdx;
       isRunningRef.current = true;
       readAlongSyncRef.current = { time: 0, heardExclusiveUtter: 0 };
-      paceAnchorRef.current = { time: 0, endInUtter: 0 };
+      paceAnchorRef.current = { time: 0, charIndex: 0 };
       setIsRunning(true);
       setIsPaused(false);
 
@@ -280,7 +277,7 @@ export function useReadAlong(
         utterance.onstart = () => {
           const now = performance.now();
           readAlongSyncRef.current = { time: now, heardExclusiveUtter: 0 };
-          paceAnchorRef.current = { time: 0, endInUtter: 0 };
+          paceAnchorRef.current = { time: 0, charIndex: 0 };
           lastHighlightKeyRef.current = '';
           activeUtterLenRef.current = utterText.length;
           utterWallStartRef.current = performance.now();
@@ -288,7 +285,6 @@ export function useReadAlong(
             READ_ALONG_CHARS_PER_SEC_INITIAL,
             paceCharsPerMsRef.current * 1000 * 1.08,
           );
-          lastElapsedAudioRef.current = null;
 
           function paceForExtrapolation(): number {
             return (
@@ -365,51 +361,51 @@ export function useReadAlong(
           if (len <= 0) {
             return;
           }
-          const wordEnd = Math.min(base + ic + len, base + utterText.length);
-          const wordEndInUtter = wordEnd - base;
           const now = performance.now();
+
+          // Fix: track charIndex (word start) differences — not wordEnd differences.
+          // Old approach used (wordEnd_cur - wordEnd_prev) / dt, which mixed "end of future word"
+          // with "time to speak previous word", producing wildly inflated rates for short words.
           const anchor = paceAnchorRef.current;
-          if (anchor.time > 0 && wordEndInUtter > anchor.endInUtter) {
-            const dc = wordEndInUtter - anchor.endInUtter;
+          if (anchor.time > 0 && ic > anchor.charIndex) {
+            const dc = ic - anchor.charIndex;
             const dt = now - anchor.time;
             if (dt > 0) {
               const inst = dc / dt;
               paceCharsPerMsRef.current = paceCharsPerMsRef.current * 0.65 + inst * 0.35;
             }
           }
-          paceAnchorRef.current = { time: now, endInUtter: wordEndInUtter };
+          paceAnchorRef.current = { time: now, charIndex: ic };
+
+          const elapsed =
+            typeof e.elapsedTime === 'number' && Number.isFinite(e.elapsedTime)
+              ? Math.max(0, e.elapsedTime)
+              : null;
+
+          // Fix: use cumulative rate charIndex/elapsed for utterCharsPerSecRef.
+          // Old inter-event approach (wordEnd_delta / elapsed_delta) oscillated 5–73 chars/sec.
+          // Cumulative rate converges smoothly from the first event.
+          if (elapsed !== null && elapsed > 0 && ic > 0) {
+            const cumCps = ic / (elapsed / 1000);
+            if (cumCps > 2.5 && cumCps < 60) {
+              utterCharsPerSecRef.current = utterCharsPerSecRef.current * 0.4 + cumCps * 0.6;
+            }
+          }
 
           const sync = readAlongSyncRef.current;
           const pace =
             Math.max(READ_ALONG_MIN_PACE_CHARS_PER_MS, paceCharsPerMsRef.current) * READ_ALONG_PACE_BOOST;
           const extrapolated = sync.heardExclusiveUtter + pace * (now - sync.time);
 
-          const elapsed =
-            typeof e.elapsedTime === 'number' && Number.isFinite(e.elapsedTime)
-              ? Math.max(0, e.elapsedTime)
-              : null;
-          if (elapsed !== null && elapsed > 0) {
-            const prev = lastElapsedAudioRef.current;
-            if (prev !== null && elapsed > prev.elapsed + 1e-4 && wordEndInUtter > prev.endInUtter) {
-              const instCps = (wordEndInUtter - prev.endInUtter) / (elapsed - prev.elapsed);
-              if (instCps > 2.5 && instCps < 90) {
-                utterCharsPerSecRef.current = utterCharsPerSecRef.current * 0.4 + instCps * 0.6;
-              }
-            }
-            lastElapsedAudioRef.current = { elapsed, endInUtter: wordEndInUtter };
-          }
-
-          const heardFromElapsed =
-            elapsed === null || elapsed <= 0
-              ? wordEndInUtter
-              : Math.min(
-                  utterText.length,
-                  Math.ceil(elapsed * utterCharsPerSecRef.current * READ_ALONG_HEARD_FROM_ELAPSED_GAIN),
-                );
-
+          // Fix: place highlight at the middle of the word the engine just announced.
+          // This is accurate because boundary events fire at word START; ic+ceil(len/2)
+          // lands in the current word so the RAF loop can smoothly advance through its end.
+          // Cap extrapolated to the current word's end to prevent skipping ahead.
+          const boundaryHeard = Math.min(utterText.length, ic + Math.ceil(len / 2));
+          const cappedExtrapolated = Math.min(ic + len, extrapolated);
           const heardExclusiveUtter = Math.min(
             utterText.length,
-            Math.max(wordEndInUtter, extrapolated, heardFromElapsed),
+            Math.max(boundaryHeard, cappedExtrapolated),
           );
           readAlongSyncRef.current = { time: now, heardExclusiveUtter };
 
