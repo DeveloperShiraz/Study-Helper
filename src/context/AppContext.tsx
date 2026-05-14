@@ -1,7 +1,16 @@
-import { createContext, useContext, useReducer, useEffect, type ReactNode } from 'react';
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useLayoutEffect,
+  useReducer,
+  type ReactNode,
+} from 'react';
 import type { User } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
-import type { UserSettings, MasterTopic, Book, Chapter } from '../types';
+import { mapUserSettings, type UserSettingsRow } from '../lib/dbMappers';
+import { readStoredTheme, THEME_STORAGE_KEY } from '../lib/theme';
+import type { UserSettings, MasterTopic, Book, Chapter, ThemePreference } from '../types';
 
 interface AppState {
   user: User | null;
@@ -12,6 +21,7 @@ interface AppState {
   currentTopic: MasterTopic | null;
   currentBook: Book | null;
   currentChapter: Chapter | null;
+  theme: ThemePreference;
 }
 
 type Action =
@@ -22,18 +32,22 @@ type Action =
   | { type: 'SET_FIRST_LAUNCH'; payload: boolean }
   | { type: 'SET_CURRENT_TOPIC'; payload: MasterTopic | null }
   | { type: 'SET_CURRENT_BOOK'; payload: Book | null }
-  | { type: 'SET_CURRENT_CHAPTER'; payload: Chapter | null };
+  | { type: 'SET_CURRENT_CHAPTER'; payload: Chapter | null }
+  | { type: 'SET_THEME'; payload: ThemePreference };
 
-const initialState: AppState = {
-  user: null,
-  isAuthReady: false,
-  settings: null,
-  isSettingsPanelOpen: false,
-  isFirstLaunch: false,
-  currentTopic: null,
-  currentBook: null,
-  currentChapter: null,
-};
+function getInitialState(): AppState {
+  return {
+    user: null,
+    isAuthReady: false,
+    settings: null,
+    isSettingsPanelOpen: false,
+    isFirstLaunch: false,
+    currentTopic: null,
+    currentBook: null,
+    currentChapter: null,
+    theme: readStoredTheme(),
+  };
+}
 
 function appReducer(state: AppState, action: Action): AppState {
   switch (action.type) {
@@ -42,7 +56,14 @@ function appReducer(state: AppState, action: Action): AppState {
     case 'SET_AUTH_READY':
       return { ...state, isAuthReady: action.payload };
     case 'SET_SETTINGS':
-      return { ...state, settings: action.payload };
+      if (action.payload === null) {
+        return { ...state, settings: null };
+      }
+      return {
+        ...state,
+        settings: action.payload,
+        theme: action.payload.theme,
+      };
     case 'SET_SETTINGS_PANEL':
       return { ...state, isSettingsPanelOpen: action.payload };
     case 'SET_FIRST_LAUNCH':
@@ -53,6 +74,8 @@ function appReducer(state: AppState, action: Action): AppState {
       return { ...state, currentBook: action.payload };
     case 'SET_CURRENT_CHAPTER':
       return { ...state, currentChapter: action.payload };
+    case 'SET_THEME':
+      return { ...state, theme: action.payload };
     default:
       return state;
   }
@@ -66,7 +89,21 @@ interface AppContextValue {
 const AppContext = createContext<AppContextValue | null>(null);
 
 export function AppProvider({ children }: { children: ReactNode }) {
-  const [state, dispatch] = useReducer(appReducer, initialState);
+  const [state, dispatch] = useReducer(appReducer, undefined, getInitialState);
+
+  useLayoutEffect(() => {
+    document.documentElement.classList.toggle('dark', state.theme === 'dark');
+    try {
+      localStorage.setItem(THEME_STORAGE_KEY, state.theme);
+    } catch {
+      /* ignore quota / private mode */
+    }
+  }, [state.theme]);
+
+  useLayoutEffect(() => {
+    const px = state.settings?.readerFontPx ?? 18;
+    document.documentElement.style.setProperty('--study-helper-reader-font', `${px}px`);
+  }, [state.settings?.readerFontPx]);
 
   useEffect(() => {
     const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
@@ -90,6 +127,31 @@ export function AppProvider({ children }: { children: ReactNode }) {
       authListener?.subscription.unsubscribe();
     };
   }, []);
+
+  useEffect(() => {
+    const user = state.user;
+    if (!user) return;
+
+    let cancelled = false;
+
+    (async () => {
+      const { data } = await supabase.from('user_settings').select('*').eq('user_id', user.id).maybeSingle();
+      if (cancelled) return;
+
+      if (data) {
+        dispatch({ type: 'SET_SETTINGS', payload: mapUserSettings(data as UserSettingsRow) });
+        dispatch({ type: 'SET_FIRST_LAUNCH', payload: false });
+      } else {
+        dispatch({ type: 'SET_SETTINGS', payload: null });
+        dispatch({ type: 'SET_FIRST_LAUNCH', payload: true });
+        dispatch({ type: 'SET_SETTINGS_PANEL', payload: true });
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [state.user?.id]);
 
   return <AppContext.Provider value={{ state, dispatch }}>{children}</AppContext.Provider>;
 }

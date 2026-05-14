@@ -1,16 +1,18 @@
 import { useEffect, useState, useCallback } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { Navigate, useNavigate, useParams } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { mapMasterTopic, type MasterTopicRow } from '../../lib/dbMappers';
 import { useApp } from '../../context/AppContext';
 import type { MasterTopic } from '../../types';
 import AppHeader from '../layout/AppHeader';
+import { AuthenticatedSessionFallback } from '../layout/AuthenticatedSessionFallback';
 import { TopicTabNav, type TopicTabId } from './TopicTabNav';
 import { BooksTab } from './tabs/BooksTab';
 import { FormulasTab } from './tabs/FormulasTab';
 import { DefinitionsTab } from './tabs/DefinitionsTab';
 import { ComparisonsTab } from './tabs/ComparisonsTab';
 import { SummariesTab } from './tabs/SummariesTab';
+import { EditTopicModal } from '../home/EditTopicModal';
 
 export function MasterTopicPage() {
   const { topicId } = useParams<{ topicId: string }>();
@@ -18,7 +20,10 @@ export function MasterTopicPage() {
   const { state } = useApp();
   const [topic, setTopic] = useState<MasterTopic | null>(null);
   const [activeTab, setActiveTab] = useState<TopicTabId>('books');
+  const [mountedTabs, setMountedTabs] = useState<Set<TopicTabId>>(() => new Set(['books']));
   const [isLoading, setIsLoading] = useState(true);
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const loadTopic = useCallback(async () => {
     if (!topicId || !state.user) return;
@@ -42,40 +47,119 @@ export function MasterTopicPage() {
     loadTopic();
   }, [loadTopic]);
 
-  if (!state.user || !topicId) return null;
+  useEffect(() => {
+    setMountedTabs((prev) => new Set(prev).add(activeTab));
+  }, [activeTab]);
+
+  useEffect(() => {
+    setActiveTab('books');
+    setMountedTabs(new Set(['books']));
+  }, [topicId]);
+
+  async function handleDeleteTopic() {
+    if (!state.user || !topic) return;
+    const isConfirmed = window.confirm(
+      `Delete "${topic.title}" and all books, chapters, notes, and extractions under it? This cannot be undone.`,
+    );
+    if (!isConfirmed) return;
+
+    setIsDeleting(true);
+    try {
+      const { error } = await supabase.from('master_topics').delete().eq('id', topic.id).eq('user_id', state.user.id);
+      if (error) {
+        window.alert(error.message);
+        return;
+      }
+      navigate('/home', { replace: true });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Delete failed';
+      window.alert(message);
+    } finally {
+      setIsDeleting(false);
+    }
+  }
+
+  if (!state.user) {
+    return <AuthenticatedSessionFallback />;
+  }
+  if (!topicId) {
+    return <Navigate to="/home" replace />;
+  }
 
   if (isLoading || !topic) {
     return (
-      <div className="min-h-screen bg-gray-50">
+      <div className="min-h-screen bg-gray-50 dark:bg-gray-950">
         <AppHeader />
-        <div className="p-8 text-center text-gray-600">Loading topic…</div>
+        <div className="p-8 text-center text-gray-600 dark:text-gray-400">Loading topic…</div>
       </div>
     );
   }
 
-  let tabContent = null;
-  if (activeTab === 'books') {
-    tabContent = <BooksTab topicId={topicId} />;
-  } else if (activeTab === 'formulas') {
-    tabContent = <FormulasTab topicId={topicId} />;
-  } else if (activeTab === 'definitions') {
-    tabContent = <DefinitionsTab topicId={topicId} />;
-  } else if (activeTab === 'comparisons') {
-    tabContent = <ComparisonsTab topicId={topicId} />;
-  } else if (activeTab === 'summaries') {
-    tabContent = <SummariesTab topicId={topicId} />;
-  }
-
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-950">
       <AppHeader />
       <div className="mx-auto max-w-5xl px-4 py-6">
-        <h1 className="text-2xl font-bold text-gray-900">{topic.title}</h1>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">{topic.title}</h1>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setIsEditModalOpen(true)}
+              disabled={isDeleting}
+              className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-800"
+            >
+              Rename
+            </button>
+            <button
+              type="button"
+              onClick={() => void handleDeleteTopic()}
+              disabled={isDeleting}
+              className="rounded-lg border border-red-200 bg-white px-3 py-1.5 text-sm text-red-700 hover:bg-red-50 disabled:opacity-50 dark:border-red-900 dark:bg-gray-900 dark:text-red-400 dark:hover:bg-red-950/30"
+            >
+              {isDeleting ? 'Deleting…' : 'Delete topic'}
+            </button>
+          </div>
+        </div>
         <div className="mt-4">
           <TopicTabNav activeTab={activeTab} onTabChange={setActiveTab} />
         </div>
-        <div className="mt-6 rounded-xl border border-gray-200 bg-white p-4 shadow-sm">{tabContent}</div>
+        <div className="mt-6 rounded-xl border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-gray-900">
+          {mountedTabs.has('books') && (
+            <div hidden={activeTab !== 'books'}>
+              <BooksTab topicId={topicId} />
+            </div>
+          )}
+          {mountedTabs.has('formulas') && (
+            <div hidden={activeTab !== 'formulas'}>
+              <FormulasTab topicId={topicId} />
+            </div>
+          )}
+          {mountedTabs.has('definitions') && (
+            <div hidden={activeTab !== 'definitions'}>
+              <DefinitionsTab topicId={topicId} />
+            </div>
+          )}
+          {mountedTabs.has('comparisons') && (
+            <div hidden={activeTab !== 'comparisons'}>
+              <ComparisonsTab topicId={topicId} />
+            </div>
+          )}
+          {mountedTabs.has('summaries') && (
+            <div hidden={activeTab !== 'summaries'}>
+              <SummariesTab topicId={topicId} />
+            </div>
+          )}
+        </div>
       </div>
+
+      <EditTopicModal
+        topic={topic}
+        isOpen={isEditModalOpen}
+        onClose={() => setIsEditModalOpen(false)}
+        onTopicUpdated={() => {
+          void loadTopic();
+        }}
+      />
     </div>
   );
 }

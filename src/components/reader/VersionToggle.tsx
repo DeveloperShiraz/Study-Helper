@@ -9,9 +9,9 @@ export function VersionToggle({ paragraph, onSelect }: VersionToggleProps) {
   if (!paragraph.modified) return null;
 
   const baseBtn =
-    'rounded-md px-2 py-1 text-xs font-medium ring-1 ring-gray-200 transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500';
+    'rounded-md px-2 py-1 text-xs font-medium ring-1 ring-gray-200 transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:ring-gray-600';
   const activeBtn = `${baseBtn} bg-indigo-600 text-white ring-indigo-600`;
-  const inactiveBtn = `${baseBtn} bg-white text-gray-700 hover:bg-gray-50`;
+  const inactiveBtn = `${baseBtn} bg-white text-gray-700 hover:bg-gray-50 dark:bg-gray-950 dark:text-gray-200 dark:hover:bg-gray-800`;
 
   return (
     <div className="mt-2 flex flex-wrap gap-2">

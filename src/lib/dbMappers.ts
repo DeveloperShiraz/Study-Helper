@@ -1,5 +1,6 @@
 import type { Book, Chapter, Extraction, ExtractionItem, MasterTopic, Paragraph, UserSettings } from '../types';
-import type { Provider } from '../types';
+import type { Provider, ThemePreference, TtsEngine } from '../types';
+import { readStoredTheme } from './theme';
 
 export interface MasterTopicRow {
   id: string;
@@ -49,6 +50,10 @@ export interface UserSettingsRow {
   api_key: string;
   model: string;
   youtube_url: string | null;
+  theme?: string | null;
+  reader_font_px?: number | null;
+  tts_engine?: string | null;
+  tts_voice_uri?: string | null;
 }
 
 export interface ExtractionRow {
@@ -110,7 +115,33 @@ export function mapParagraph(row: ParagraphRow): Paragraph {
   };
 }
 
+function themeFromSettingsRow(row: UserSettingsRow): ThemePreference {
+  if (row.theme === 'dark') return 'dark';
+  if (row.theme === 'light') return 'light';
+  return readStoredTheme();
+}
+
+function ttsEngineFromRow(row: UserSettingsRow): TtsEngine {
+  return row.tts_engine === 'browser' ? 'browser' : 'browser';
+}
+
+export const READER_FONT_PX_MIN = 12;
+export const READER_FONT_PX_MAX = 32;
+export const READER_FONT_PX_DEFAULT = 18;
+
+function readerFontPxFromRow(row: UserSettingsRow): number {
+  const raw = row.reader_font_px;
+  if (typeof raw !== 'number' || !Number.isFinite(raw)) {
+    return READER_FONT_PX_DEFAULT;
+  }
+  return Math.min(READER_FONT_PX_MAX, Math.max(READER_FONT_PX_MIN, Math.round(raw)));
+}
+
 export function mapUserSettings(row: UserSettingsRow): UserSettings {
+  const rawUri = row.tts_voice_uri;
+  const ttsVoiceUri =
+    typeof rawUri === 'string' && rawUri.trim().length > 0 ? rawUri.trim() : null;
+
   return {
     userId: row.user_id,
     provider: row.provider as Provider,
@@ -118,6 +149,10 @@ export function mapUserSettings(row: UserSettingsRow): UserSettings {
     apiKey: row.api_key,
     model: row.model,
     youtubeUrl: row.youtube_url ?? undefined,
+    theme: themeFromSettingsRow(row),
+    readerFontPx: readerFontPxFromRow(row),
+    ttsEngine: ttsEngineFromRow(row),
+    ttsVoiceUri,
   };
 }
 

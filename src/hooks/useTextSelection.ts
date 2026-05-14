@@ -20,19 +20,27 @@ export function useTextSelection() {
     setSelection({ text: sel.toString().trim(), rect });
   }, []);
 
-  useEffect(() => {
-    document.addEventListener('mouseup', handleSelection);
-    document.addEventListener('keyup', handleSelection);
-    return () => {
-      document.removeEventListener('mouseup', handleSelection);
-      document.removeEventListener('keyup', handleSelection);
-    };
-  }, [handleSelection]);
-
   const clearSelection = useCallback(() => {
     window.getSelection()?.removeAllRanges();
     setSelection({ text: '', rect: null });
   }, []);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        clearSelection();
+      }
+    };
+
+    document.addEventListener('mouseup', handleSelection);
+    document.addEventListener('keyup', handleSelection);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('mouseup', handleSelection);
+      document.removeEventListener('keyup', handleSelection);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [handleSelection, clearSelection]);
 
   return { selection, clearSelection };
 }

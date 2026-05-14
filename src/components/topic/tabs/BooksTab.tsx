@@ -1,10 +1,20 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import {
+  DndContext,
+  PointerSensor,
+  closestCenter,
+  type DragEndEvent,
+  useSensor,
+  useSensors,
+} from '@dnd-kit/core';
+import { SortableContext, arrayMove, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { supabase } from '../../../lib/supabase';
 import { mapBook, mapChapter, type BookRow, type ChapterRow } from '../../../lib/dbMappers';
 import { useApp } from '../../../context/AppContext';
 import type { Book, Chapter } from '../../../types';
-import { BookAccordion } from '../../books/BookAccordion';
+import { SortableBookAccordion } from '../../books/SortableBookAccordion';
 import { AddBookModal } from '../../books/AddBookModal';
+import { AuthenticatedSessionFallback } from '../../layout/AuthenticatedSessionFallback';
 
 interface BooksTabProps {
   topicId: string;
@@ -17,61 +27,107 @@ export function BooksTab({ topicId }: BooksTabProps) {
   const [isLoading, setIsLoading] = useState(true);
   const [isAddBookOpen, setIsAddBookOpen] = useState(false);
 
-  const loadData = useCallback(async () => {
-    if (!state.user) return;
-    setIsLoading(true);
+  const bookSensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
 
-    const { data: bookRows } = await supabase
-      .from('books')
-      .select('*')
-      .eq('master_topic_id', topicId)
-      .eq('user_id', state.user.id)
-      .order('order', { ascending: true });
+  const sortedBooks = useMemo(() => [...books].sort((a, b) => a.order - b.order), [books]);
+  const bookIds = useMemo(() => sortedBooks.map((b) => b.id), [sortedBooks]);
 
-    const mappedBooks = (bookRows ?? []).map((row) => mapBook(row as BookRow));
-    setBooks(mappedBooks);
+  const loadData = useCallback(
+    async (options?: { silent?: boolean }) => {
+      if (!state.user) return;
+      const isSilent = options?.silent === true;
+      if (!isSilent) {
+        setIsLoading(true);
+      }
 
-    if (mappedBooks.length === 0) {
-      setChaptersByBook({});
-      setIsLoading(false);
-      return;
-    }
+      try {
+        const { data: bookRows } = await supabase
+          .from('books')
+          .select('*')
+          .eq('master_topic_id', topicId)
+          .eq('user_id', state.user.id)
+          .order('order', { ascending: true });
 
-    const bookIds = mappedBooks.map((b) => b.id);
-    const { data: chapterRows } = await supabase
-      .from('chapters')
-      .select('*')
-      .in('book_id', bookIds)
-      .eq('user_id', state.user.id)
-      .order('order', { ascending: true });
+        const mappedBooks = (bookRows ?? []).map((row) => mapBook(row as BookRow));
+        setBooks(mappedBooks);
 
-    const grouped: Record<string, Chapter[]> = {};
-    for (const b of mappedBooks) {
-      grouped[b.id] = [];
-    }
-    for (const row of chapterRows ?? []) {
-      const ch = mapChapter(row as ChapterRow);
-      if (!grouped[ch.bookId]) grouped[ch.bookId] = [];
-      grouped[ch.bookId].push(ch);
-    }
-    setChaptersByBook(grouped);
-    setIsLoading(false);
-  }, [state.user, topicId]);
+        if (mappedBooks.length === 0) {
+          setChaptersByBook({});
+          return;
+        }
 
-  useEffect(() => {
-    loadData();
+        const mappedBookIds = mappedBooks.map((b) => b.id);
+        const { data: chapterRows } = await supabase
+          .from('chapters')
+          .select('*')
+          .in('book_id', mappedBookIds)
+          .eq('user_id', state.user.id)
+          .order('order', { ascending: true });
+
+        const grouped: Record<string, Chapter[]> = {};
+        for (const b of mappedBooks) {
+          grouped[b.id] = [];
+        }
+        for (const row of chapterRows ?? []) {
+          const ch = mapChapter(row as ChapterRow);
+          if (!grouped[ch.bookId]) grouped[ch.bookId] = [];
+          grouped[ch.bookId].push(ch);
+        }
+        setChaptersByBook(grouped);
+      } finally {
+        if (!isSilent) {
+          setIsLoading(false);
+        }
+      }
+    },
+    [state.user, topicId],
+  );
+
+  const refreshBooksDataSilently = useCallback(() => {
+    void loadData({ silent: true });
   }, [loadData]);
 
-  if (!state.user) return null;
+  useEffect(() => {
+    void loadData();
+  }, [loadData]);
+
+  async function handleBookDragEnd(event: DragEndEvent) {
+    const { active, over } = event;
+    if (!over || active.id === over.id || !state.user) return;
+    const userId = state.user.id;
+
+    const oldIndex = sortedBooks.findIndex((b) => b.id === active.id);
+    const newIndex = sortedBooks.findIndex((b) => b.id === over.id);
+    if (oldIndex < 0 || newIndex < 0) return;
+
+    const reordered = arrayMove(sortedBooks, oldIndex, newIndex);
+    const optimisticBooks = reordered.map((b, index) => ({ ...b, order: index }));
+    setBooks(optimisticBooks);
+
+    const results = await Promise.all(
+      reordered.map((b, index) =>
+        supabase.from('books').update({ order: index }).eq('id', b.id).eq('user_id', userId),
+      ),
+    );
+    const failed = results.find((r) => r.error);
+    if (failed?.error) {
+      window.alert(failed.error.message);
+      void loadData({ silent: true });
+    }
+  }
+
+  if (!state.user) {
+    return <AuthenticatedSessionFallback />;
+  }
 
   if (isLoading) {
-    return <p className="text-sm text-gray-600">Loading books…</p>;
+    return <p className="text-sm text-gray-600 dark:text-gray-400">Loading books…</p>;
   }
 
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h2 className="text-lg font-semibold text-gray-900">Books</h2>
+        <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Books</h2>
         <button
           type="button"
           className="rounded-lg bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700"
@@ -82,19 +138,23 @@ export function BooksTab({ topicId }: BooksTabProps) {
       </div>
 
       {books.length === 0 ? (
-        <p className="text-sm text-gray-600">No books yet. Add your first book.</p>
+        <p className="text-sm text-gray-600 dark:text-gray-400">No books yet. Add your first book.</p>
       ) : (
-        <div className="space-y-3">
-          {books.map((book) => (
-            <BookAccordion
-              key={book.id}
-              topicId={topicId}
-              book={book}
-              chapters={chaptersByBook[book.id] ?? []}
-              onChanged={loadData}
-            />
-          ))}
-        </div>
+        <DndContext sensors={bookSensors} collisionDetection={closestCenter} onDragEnd={handleBookDragEnd}>
+          <SortableContext items={bookIds} strategy={verticalListSortingStrategy}>
+            <div className="space-y-3">
+              {sortedBooks.map((book) => (
+                <SortableBookAccordion
+                  key={book.id}
+                  topicId={topicId}
+                  book={book}
+                  chapters={chaptersByBook[book.id] ?? []}
+                  onChanged={refreshBooksDataSilently}
+                />
+              ))}
+            </div>
+          </SortableContext>
+        </DndContext>
       )}
 
       <AddBookModal

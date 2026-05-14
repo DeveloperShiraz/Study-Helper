@@ -3,7 +3,7 @@ export {};
 declare global {
   namespace YT {
     class Player {
-      constructor(elementId: string, options: Record<string, unknown>);
+      constructor(host: string | HTMLElement, options: Record<string, unknown>);
       loadPlaylist(playlist: string | { list: string; listType: string }): void;
       loadVideoById(videoId: string): void;
       playVideo(): void;
@@ -11,6 +11,9 @@ declare global {
       nextVideo(): void;
       previousVideo(): void;
       setVolume(volume: number): void;
+      getCurrentTime(): number;
+      getDuration(): number;
+      seekTo(seconds: number, allowSeekAhead?: boolean): void;
       destroy(): void;
     }
   }

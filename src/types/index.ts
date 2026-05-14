@@ -2,9 +2,14 @@ export type Provider =
   | 'openrouter'
   | 'openai'
   | 'deepseek'
+  | 'gemini'
   | 'nvidia'
   | 'anthropic'
   | 'custom';
+
+export type ThemePreference = 'light' | 'dark';
+
+export type TtsEngine = 'browser';
 
 export interface UserSettings {
   userId: string;
@@ -13,6 +18,11 @@ export interface UserSettings {
   apiKey: string;
   model: string;
   youtubeUrl?: string;
+  theme: ThemePreference;
+  /** Base font size (px) for the chapter reader body. */
+  readerFontPx: number;
+  ttsEngine: TtsEngine;
+  ttsVoiceUri: string | null;
 }
 
 export interface MasterTopic {
