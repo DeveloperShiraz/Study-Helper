@@ -17,13 +17,17 @@ function itemKey(item: ChapterOutlineItem): string {
   return `${item.paragraphId}-${item.headingIndex}`;
 }
 
+/** Pixels from viewport top where a navigated heading lands. Must be < SCROLL_SPY_OFFSET so the spy treats it as active. */
+const SCROLL_TARGET_TOP_PX = 100;
+
 function scrollToChapterHeading(paragraphId: string, headingIndex: number, label: string): void {
   let attempts = 0;
   function tryScroll(): void {
     const el =
       queryChapterHeadingElement(paragraphId, headingIndex) ?? queryChapterHeadingByLabelInReader(label);
     if (el) {
-      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      const targetY = el.getBoundingClientRect().top + window.scrollY - SCROLL_TARGET_TOP_PX;
+      window.scrollTo({ top: Math.max(0, targetY), behavior: 'smooth' });
       flashOutlineJumpTarget(el);
       return;
     }
@@ -91,6 +95,9 @@ export function ChapterOutlineNav({ items }: ChapterOutlineNavProps) {
         if (el.getBoundingClientRect().top + window.scrollY <= threshold) {
           found = itemKey(item);
         }
+      }
+      if (!found && items.length > 0) {
+        found = itemKey(items[0]);
       }
       setActiveKey(found);
     }
