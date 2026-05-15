@@ -1,6 +1,8 @@
 import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
 
+import { cloudflare } from "@cloudflare/vite-plugin";
+
 /**
  * Supabase URL + anon key must be present when `vite build` runs (they are baked into the SPA).
  * Cloudflare "Variables and secrets" on a Worker are often runtime-only and are NOT visible here.
@@ -22,7 +24,7 @@ export default defineConfig(({ mode }) => {
   const supabaseAnonKey = resolveSupabaseAnonKey(mode);
 
   return {
-    plugins: [react()],
+    plugins: [react(), cloudflare()],
     define: {
       'import.meta.env.VITE_SUPABASE_URL': JSON.stringify(supabaseUrl),
       'import.meta.env.VITE_SUPABASE_ANON_KEY': JSON.stringify(supabaseAnonKey),
