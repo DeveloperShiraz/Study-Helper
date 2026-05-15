@@ -1,5 +1,6 @@
 import { useState, useCallback } from 'react';
 import { callAI } from '../ai/adapter';
+import { resolveAiSettingsForTask } from '../lib/aiTaskSettings';
 import {
   SIMPLIFY_SYSTEM,
   EXPLAIN_SYSTEM,
@@ -29,7 +30,11 @@ export function useAI(): UseAIReturn {
     setIsLoading(true);
     setError(null);
     try {
-      const result = await callAI(`Rewrite this: "${text}"`, SIMPLIFY_SYSTEM, settings);
+      const result = await callAI(
+        `Rewrite this: "${text}"`,
+        SIMPLIFY_SYSTEM,
+        resolveAiSettingsForTask(settings, 'chat'),
+      );
       return result;
     } catch (e) {
       const message = e instanceof Error ? e.message : 'Simplify failed';
@@ -44,7 +49,11 @@ export function useAI(): UseAIReturn {
     setIsLoading(true);
     setError(null);
     try {
-      const result = await callAI(`Explain this: "${text}"`, EXPLAIN_SYSTEM, settings);
+      const result = await callAI(
+        `Explain this: "${text}"`,
+        EXPLAIN_SYSTEM,
+        resolveAiSettingsForTask(settings, 'chat'),
+      );
       return result;
     } catch (e) {
       const message = e instanceof Error ? e.message : 'Explain failed';
@@ -63,7 +72,7 @@ export function useAI(): UseAIReturn {
         const result = await callAI(
           `Extract all formulas from: "${content}"`,
           EXTRACT_FORMULAS_SYSTEM(existingFormulas),
-          settings,
+          resolveAiSettingsForTask(settings, 'chat'),
         );
         return result;
       } catch (e) {
@@ -84,7 +93,7 @@ export function useAI(): UseAIReturn {
       const result = await callAI(
         `Extract all definitions from: "${content}"`,
         EXTRACT_DEFINITIONS_SYSTEM,
-        settings,
+        resolveAiSettingsForTask(settings, 'chat'),
       );
       return result;
     } catch (e) {
@@ -103,7 +112,7 @@ export function useAI(): UseAIReturn {
       const result = await callAI(
         `Find and compare easily confused concepts in: "${content}"`,
         COMPARISONS_SYSTEM,
-        settings,
+        resolveAiSettingsForTask(settings, 'chat'),
       );
       return result;
     } catch (e) {
@@ -119,7 +128,11 @@ export function useAI(): UseAIReturn {
     setIsLoading(true);
     setError(null);
     try {
-      const result = await callAI(`Summarize: "${content}"`, SUMMARY_SYSTEM, settings);
+      const result = await callAI(
+        `Summarize: "${content}"`,
+        SUMMARY_SYSTEM,
+        resolveAiSettingsForTask(settings, 'chat'),
+      );
       return result;
     } catch (e) {
       const message = e instanceof Error ? e.message : 'Summary failed';

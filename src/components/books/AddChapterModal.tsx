@@ -2,6 +2,7 @@ import { useRef, useState, type ChangeEvent, type DragEvent, type FormEvent } fr
 import { supabase } from '../../lib/supabase';
 import { insertChapterWithParagraphs } from '../../lib/supabaseChapterInsert';
 import { extractChapterTextFromPdf } from '../../ai/adapter';
+import { resolveAiSettingsForTask } from '../../lib/aiTaskSettings';
 import { MAX_PDF_IMPORT_BYTES, isPdfFile } from '../../lib/pdfImport';
 import { useApp } from '../../context/AppContext';
 
@@ -42,7 +43,8 @@ export function AddChapterModal({ isOpen, bookId, onClose, onCreated }: AddChapt
     setError(null);
     setPdfHint(null);
     try {
-      const { text, sourceLabel } = await extractChapterTextFromPdf(file, state.settings, title);
+      const pdfAiSettings = resolveAiSettingsForTask(state.settings, 'pdfImport');
+      const { text, sourceLabel } = await extractChapterTextFromPdf(file, pdfAiSettings, title);
       if (!text.trim()) {
         setError('The model returned no text. Try again, paste manually, or use a different model.');
         return;
@@ -161,11 +163,13 @@ export function AddChapterModal({ isOpen, bookId, onClose, onCreated }: AddChapt
           <div className="flex min-h-0 flex-1 flex-col">
             <span className="block text-sm font-medium text-gray-700 dark:text-gray-300">Chapter source</span>
             <p className="mt-1 text-xs text-gray-500 dark:text-gray-500">
-              Drop a PDF and your configured AI will read it—only if Settings uses{' '}
+              Drop a PDF and your configured AI will read it—when Settings uses{' '}
               <span className="font-medium text-gray-700 dark:text-gray-300">OpenAI</span> (official API; models such
               as gpt-4o, gpt-4o-mini, or gpt-4.1 that support PDF on the Responses API),{' '}
               <span className="font-medium text-gray-700 dark:text-gray-300">Anthropic</span> (Claude 3.5 Sonnet or
-              newer), or{' '}
+              newer),{' '}
+              <span className="font-medium text-gray-700 dark:text-gray-300">Amazon Bedrock</span> (Claude with PDF in
+              Messages, same credentials as elsewhere in Settings), or{' '}
               <span className="font-medium text-gray-700 dark:text-gray-300">Google Gemini</span> (Flash / Pro with
               PDF via the Gemini API—see Settings for doc links).{' '}
               <span className="font-medium text-gray-700 dark:text-gray-300">DeepSeek</span> (including v4 Pro),

@@ -1,14 +1,13 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '../../lib/supabase';
 import { useApp } from '../../context/AppContext';
 import type { Paragraph } from '../../types';
 import type { ReadAlongHighlight } from '../../hooks/useReadAlong';
 import { useReadAlongDomHighlight } from '../../hooks/useReadAlongDomHighlight';
 import { createReaderMarkdownComponents } from './markdownReaderComponents';
+import { MarkdownWithMath } from './MarkdownWithMath';
 import { VersionToggle } from './VersionToggle';
 import { ParagraphStudyRail } from './ParagraphStudyRail';
-
-const MarkdownParagraph = lazy(() => import('react-markdown'));
 
 interface ParagraphBlockProps {
   paragraph: Paragraph;
@@ -137,8 +136,6 @@ export function ParagraphBlock({
     : 'group relative rounded-lg border border-transparent px-3 py-3 hover:border-amber-200/60 dark:hover:border-stone-600/50';
   const markdownBodyClass =
     'flex-1 min-w-0 space-y-2 text-stone-800 dark:text-stone-200 [&_code]:rounded [&_code]:bg-amber-50 [&_code]:px-1 [&_code]:py-0.5 [&_code]:font-mono [&_code]:text-[0.875em] dark:[&_code]:bg-stone-800 dark:[&_code]:text-stone-100 [&_a]:text-amber-700 [&_a]:underline [&_a]:underline-offset-2 dark:[&_a]:text-amber-400';
-  const markdownFallbackClass =
-    'm-0 whitespace-pre-wrap leading-relaxed text-gray-900 dark:text-gray-100';
   const editActionsClass = 'mt-2 flex flex-wrap gap-2';
   const primaryBtnClass =
     'rounded-lg bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50';
@@ -258,9 +255,7 @@ export function ParagraphBlock({
               )}
             </>
           ) : (
-            <Suspense fallback={<p className={markdownFallbackClass}>{displayText}</p>}>
-              <MarkdownParagraph components={markdownComponents}>{displayText}</MarkdownParagraph>
-            </Suspense>
+            <MarkdownWithMath components={markdownComponents}>{displayText}</MarkdownWithMath>
           )}
         </div>
         {shouldShowStudyRail && onStudyExplain && onStudySimplify && onStudyPin ? (

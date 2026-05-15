@@ -52,3 +52,20 @@ export function isReaderFontColumnUnavailableError(message: unknown): boolean {
     m.includes('could not find')
   );
 }
+
+/**
+ * PostgREST when `task_ai_overrides` / Bedrock IAM columns are missing or schema cache is stale.
+ * @see ../../supabase/migrations/006_user_settings_task_ai_bedrock.sql
+ */
+export function isTaskAiBedrockColumnUnavailableError(message: unknown): boolean {
+  if (typeof message !== 'string') return false;
+  const m = message.toLowerCase();
+  const hints = ['task_ai_overrides', 'bedrock_access_key', 'bedrock_region'];
+  if (!hints.some((h) => m.includes(h))) return false;
+  return (
+    m.includes('schema cache') ||
+    m.includes('does not exist') ||
+    m.includes('column') ||
+    m.includes('could not find')
+  );
+}

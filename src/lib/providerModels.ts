@@ -21,6 +21,47 @@ const OPENAI_MODELS: ProviderModelOption[] = [
   { value: 'gpt-5-nano', label: 'gpt-5-nano' },
 ];
 
+/**
+ * Bedrock `InvokeModel` modelId values from AWS Anthropic model cards (2026).
+ * Newer Claude 4.x models often require a geo/global inference profile (e.g. `us.…`) for on-demand;
+ * the bare `anthropic.…` id may return 400 without provisioned throughput.
+ */
+const BEDROCK_CLAUDE_MODELS: ProviderModelOption[] = [
+  { value: 'us.anthropic.claude-sonnet-4-6', label: 'Claude Sonnet 4.6 (US inference profile)' },
+  { value: 'eu.anthropic.claude-sonnet-4-6', label: 'Claude Sonnet 4.6 (EU inference profile)' },
+  { value: 'au.anthropic.claude-sonnet-4-6', label: 'Claude Sonnet 4.6 (AU inference profile)' },
+  { value: 'jp.anthropic.claude-sonnet-4-6', label: 'Claude Sonnet 4.6 (JP inference profile)' },
+  { value: 'global.anthropic.claude-sonnet-4-6', label: 'Claude Sonnet 4.6 (global inference profile)' },
+  { value: 'anthropic.claude-sonnet-4-6', label: 'Claude Sonnet 4.6 (base id — may need provisioned throughput)' },
+  { value: 'us.anthropic.claude-opus-4-6-v1', label: 'Claude Opus 4.6 (US inference profile)' },
+  { value: 'eu.anthropic.claude-opus-4-6-v1', label: 'Claude Opus 4.6 (EU inference profile)' },
+  { value: 'au.anthropic.claude-opus-4-6-v1', label: 'Claude Opus 4.6 (AU inference profile)' },
+  { value: 'global.anthropic.claude-opus-4-6-v1', label: 'Claude Opus 4.6 (global inference profile)' },
+  { value: 'anthropic.claude-opus-4-6-v1', label: 'Claude Opus 4.6 (base id)' },
+  { value: 'us.anthropic.claude-sonnet-4-5-20250929-v1:0', label: 'Claude Sonnet 4.5 (US inference profile)' },
+  { value: 'eu.anthropic.claude-sonnet-4-5-20250929-v1:0', label: 'Claude Sonnet 4.5 (EU inference profile)' },
+  { value: 'global.anthropic.claude-sonnet-4-5-20250929-v1:0', label: 'Claude Sonnet 4.5 (global inference profile)' },
+  { value: 'anthropic.claude-sonnet-4-5-20250929-v1:0', label: 'Claude Sonnet 4.5 (base id)' },
+  { value: 'us.anthropic.claude-opus-4-5-20251101-v1:0', label: 'Claude Opus 4.5 (US inference profile)' },
+  { value: 'eu.anthropic.claude-opus-4-5-20251101-v1:0', label: 'Claude Opus 4.5 (EU inference profile)' },
+  { value: 'global.anthropic.claude-opus-4-5-20251101-v1:0', label: 'Claude Opus 4.5 (global inference profile)' },
+  { value: 'anthropic.claude-opus-4-5-20251101-v1:0', label: 'Claude Opus 4.5 (base id)' },
+  { value: 'us.anthropic.claude-haiku-4-5-20251001-v1:0', label: 'Claude Haiku 4.5 (US inference profile)' },
+  { value: 'eu.anthropic.claude-haiku-4-5-20251001-v1:0', label: 'Claude Haiku 4.5 (EU inference profile)' },
+  { value: 'global.anthropic.claude-haiku-4-5-20251001-v1:0', label: 'Claude Haiku 4.5 (global inference profile)' },
+  { value: 'anthropic.claude-haiku-4-5-20251001-v1:0', label: 'Claude Haiku 4.5 (base id)' },
+  { value: 'us.anthropic.claude-sonnet-4-20250514-v1:0', label: 'Claude Sonnet 4 (US inference profile)' },
+  { value: 'eu.anthropic.claude-sonnet-4-20250514-v1:0', label: 'Claude Sonnet 4 (EU inference profile)' },
+  { value: 'apac.anthropic.claude-sonnet-4-20250514-v1:0', label: 'Claude Sonnet 4 (APAC inference profile)' },
+  { value: 'global.anthropic.claude-sonnet-4-20250514-v1:0', label: 'Claude Sonnet 4 (global inference profile)' },
+  { value: 'anthropic.claude-sonnet-4-20250514-v1:0', label: 'Claude Sonnet 4 (base id)' },
+  { value: 'anthropic.claude-3-5-sonnet-20240620-v1:0', label: 'Claude 3.5 Sonnet' },
+  { value: 'anthropic.claude-3-5-haiku-20240307-v1:0', label: 'Claude 3.5 Haiku' },
+  { value: 'anthropic.claude-3-opus-20240229-v1:0', label: 'Claude 3 Opus' },
+  { value: 'anthropic.claude-3-sonnet-20240229-v1:0', label: 'Claude 3 Sonnet' },
+  { value: 'anthropic.claude-3-haiku-20240307-v1:0', label: 'Claude 3 Haiku' },
+];
+
 const ANTHROPIC_MODELS: ProviderModelOption[] = [
   { value: 'claude-sonnet-4-20250514', label: 'Claude Sonnet 4' },
   { value: 'claude-opus-4-20250514', label: 'Claude Opus 4' },
@@ -72,6 +113,7 @@ const NVIDIA_MODELS: ProviderModelOption[] = [
 export const PRESET_MODELS_BY_PROVIDER: Record<Exclude<Provider, 'custom'>, readonly ProviderModelOption[]> = {
   openai: OPENAI_MODELS,
   anthropic: ANTHROPIC_MODELS,
+  bedrock: BEDROCK_CLAUDE_MODELS,
   gemini: GEMINI_MODELS,
   deepseek: DEEPSEEK_MODELS,
   openrouter: OPENROUTER_MODELS,

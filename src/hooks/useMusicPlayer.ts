@@ -92,13 +92,9 @@ export function useMusicPlayer() {
       ...prev,
       volume: snap.volume,
       isBarVisible: snap.isBarVisible,
-      isPlaying: snap.wasPlaying,
+      isPlaying: false,
     }));
-    if (snap.wasPlaying) {
-      player.playVideo();
-    } else {
-      player.pauseVideo();
-    }
+    player.pauseVideo();
   }, [mediaKey, playbackProgress.durationSec]);
 
   useEffect(() => {

@@ -13,6 +13,9 @@
     "@dnd-kit/sortable": "^8.0.0",
     "@dnd-kit/utilities": "^3.2.2",
     "@supabase/supabase-js": "^2.44.0",
+    "aws4fetch": "^1.0.20",
+    "jsonrepair": "^3.14.0",
+    "katex": "^0.16.46",
     "mdast-util-from-markdown": "^2.0.3",
     "mdast-util-to-string": "^4.0.0",
     "pdfjs-dist": "^4.10.38",
@@ -20,6 +23,7 @@
     "react-dom": "^18.3.0",
     "react-markdown": "^9.0.1",
     "react-router-dom": "^6.24.0",
+    "remark-math": "^6.0.0",
     "unist-util-visit": "^5.1.0",
     "uuid": "^10.0.0"
   },

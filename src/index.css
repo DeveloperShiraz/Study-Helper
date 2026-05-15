@@ -28,4 +28,18 @@
       0 0 0 1px rgb(24 24 27),
       0 0 32px rgb(250 204 21 / 0.5);
   }
+
+  /* KaTeX: match reader / extraction text color; allow wide displays to scroll */
+  .katex {
+    font-size: 1.05em;
+  }
+  .dark .katex {
+    color: rgb(231 229 228);
+  }
+  .katex-display {
+    margin: 0.75rem 0;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding-bottom: 0.15rem;
+  }
 }

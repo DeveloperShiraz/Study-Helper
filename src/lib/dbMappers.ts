@@ -1,5 +1,16 @@
-import type { Book, Chapter, Extraction, ExtractionItem, MasterTopic, Paragraph, UserSettings } from '../types';
-import type { Provider, ThemePreference, TtsEngine } from '../types';
+import type {
+  Book,
+  Chapter,
+  Extraction,
+  ExtractionItem,
+  MasterTopic,
+  Paragraph,
+  Provider,
+  TaskAiOverrides,
+  TaskAiProfile,
+  UserSettings,
+} from '../types';
+import type { ThemePreference, TtsEngine } from '../types';
 import { readStoredTheme } from './theme';
 
 export interface MasterTopicRow {
@@ -54,6 +65,50 @@ export interface UserSettingsRow {
   reader_font_px?: number | null;
   tts_engine?: string | null;
   tts_voice_uri?: string | null;
+  bedrock_access_key_id?: string | null;
+  bedrock_region?: string | null;
+  task_ai_overrides?: unknown;
+}
+
+const KNOWN_PROVIDERS = new Set<Provider>([
+  'openrouter',
+  'openai',
+  'deepseek',
+  'gemini',
+  'nvidia',
+  'anthropic',
+  'bedrock',
+  'custom',
+]);
+
+function isProviderString(value: unknown): value is Provider {
+  return typeof value === 'string' && KNOWN_PROVIDERS.has(value as Provider);
+}
+
+function isTaskAiProfileJson(value: unknown): value is TaskAiProfile {
+  if (typeof value !== 'object' || value === null) return false;
+  const o = value as Record<string, unknown>;
+  if (!isProviderString(o.provider)) return false;
+  if (typeof o.baseUrl !== 'string' || typeof o.model !== 'string' || typeof o.apiKey !== 'string') return false;
+  if (o.bedrockAccessKeyId !== undefined && typeof o.bedrockAccessKeyId !== 'string') return false;
+  if (o.bedrockRegion !== undefined && typeof o.bedrockRegion !== 'string') return false;
+  return true;
+}
+
+function parseTaskAiOverrides(raw: unknown): TaskAiOverrides | undefined {
+  if (raw === null || raw === undefined) return undefined;
+  if (typeof raw !== 'object') return undefined;
+  const o = raw as Record<string, unknown>;
+  const out: TaskAiOverrides = {};
+  const chat = o.chat;
+  if (isTaskAiProfileJson(chat)) {
+    out.chat = chat;
+  }
+  const pdfImport = o.pdfImport;
+  if (isTaskAiProfileJson(pdfImport)) {
+    out.pdfImport = pdfImport;
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
 }
 
 export interface ExtractionRow {
@@ -149,6 +204,16 @@ export function mapUserSettings(row: UserSettingsRow): UserSettings {
   const rawUri = row.tts_voice_uri;
   const ttsVoiceUri =
     typeof rawUri === 'string' && rawUri.trim().length > 0 ? rawUri.trim() : null;
+  const bedrockAccessRaw = row.bedrock_access_key_id;
+  const bedrockAccessKeyId =
+    typeof bedrockAccessRaw === 'string' && bedrockAccessRaw.trim().length > 0
+      ? bedrockAccessRaw.trim()
+      : undefined;
+  const bedrockRegionRaw = row.bedrock_region;
+  const bedrockRegion =
+    typeof bedrockRegionRaw === 'string' && bedrockRegionRaw.trim().length > 0
+      ? bedrockRegionRaw.trim()
+      : undefined;
 
   return {
     userId: row.user_id,
@@ -161,6 +226,9 @@ export function mapUserSettings(row: UserSettingsRow): UserSettings {
     readerFontPx: readerFontPxFromRow(row),
     ttsEngine: ttsEngineFromRow(row),
     ttsVoiceUri,
+    bedrockAccessKeyId,
+    bedrockRegion,
+    taskAiOverrides: parseTaskAiOverrides(row.task_ai_overrides),
   };
 }
 

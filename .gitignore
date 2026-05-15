@@ -37,6 +37,7 @@ supabase/.temp
 *.tsbuildinfo
 .cache
 .turbo
+.omx
 coverage
 *.pem
 

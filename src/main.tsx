@@ -3,6 +3,7 @@ import ReactDOM from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';
 import App from './App';
 import { registerReadAlongHighlightStyles } from './lib/registerReadAlongHighlightStyles';
+import 'katex/dist/katex.min.css';
 import './index.css';
 
 registerReadAlongHighlightStyles();

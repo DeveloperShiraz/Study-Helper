@@ -5,6 +5,7 @@ import AuthPage from './components/auth/AuthPage';
 import { HomePage } from './components/home/HomePage';
 import { MasterTopicPage } from './components/topic/MasterTopicPage';
 import { ChapterReadingView } from './components/reader/ChapterReadingView';
+import { BookExtractionReadingView } from './components/reader/BookExtractionReadingView';
 import { SettingsPanel } from './components/layout/SettingsPanel';
 import { MusicPlayerBar } from './components/music/MusicPlayerBar';
 import { AppErrorBoundary } from './components/layout/AppErrorBoundary';
@@ -72,6 +73,16 @@ function AppRoutes() {
           <AuthGate>
             <AuthenticatedShell>
               <MasterTopicPage />
+            </AuthenticatedShell>
+          </AuthGate>
+        }
+      />
+      <Route
+        path="/topic/:topicId/book/:bookId/extract/:extractionType"
+        element={
+          <AuthGate>
+            <AuthenticatedShell>
+              <BookExtractionReadingView />
             </AuthenticatedShell>
           </AuthGate>
         }

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import { supabase } from '../../lib/supabase';
 import { mapUserSettings, type UserSettingsRow } from '../../lib/dbMappers';
 import { parseYoutubeUrl } from '../../lib/youtubeIds';
@@ -39,15 +39,6 @@ export function MusicPlayerBar() {
   const [scrubPreviewSec, setScrubPreviewSec] = useState<number | null>(null);
   const isScrubbingRef = useRef(false);
   const scrubberInputRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    const youtubeUrl = state.settings?.youtubeUrl;
-    if (!youtubeUrl) return;
-    const media = parseYoutubeUrl(youtubeUrl);
-    if (media) {
-      loadYoutubeMedia(media);
-    }
-  }, [state.settings?.youtubeUrl, loadYoutubeMedia]);
 
   async function persistYoutubeUrl(url: string) {
     if (!state.user) return { ok: false as const, message: 'Not signed in.' };

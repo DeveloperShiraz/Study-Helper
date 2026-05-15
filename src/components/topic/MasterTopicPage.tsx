@@ -135,7 +135,7 @@ export function MasterTopicPage() {
         <div className="mt-4">
           <TopicTabNav activeTab={activeTab} onTabChange={setActiveTab} />
         </div>
-        <div className="mt-6 rounded-xl border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-gray-900">
+        <div className="mt-6 w-full">
           {mountedTabs.has('books') && (
             <div hidden={activeTab !== 'books'}>
               <BooksTab topicId={topicId} />

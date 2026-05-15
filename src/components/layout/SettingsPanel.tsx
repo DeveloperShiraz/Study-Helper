@@ -1,25 +1,63 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import { callAI } from '../../ai/adapter';
 import { supabase } from '../../lib/supabase';
-import { mapUserSettings, READER_FONT_PX_DEFAULT, READER_FONT_PX_MAX, READER_FONT_PX_MIN, READER_MARKDOWN_H2_OFFSET_PX, OUTLINE_FONT_PX_DEFAULT, OUTLINE_FONT_PX_MIN, OUTLINE_FONT_PX_MAX, OUTLINE_FONT_LS_KEY, type UserSettingsRow } from '../../lib/dbMappers';
-import { isReaderFontColumnUnavailableError, isThemeColumnUnavailableError, isTtsColumnUnavailableError } from '../../lib/themePersist';
-import { writeLocalTtsVoiceUri, readLocalTtsVoiceUri } from '../../lib/ttsVoiceLocalFallback';
 import {
-  OTHER_MODEL_VALUE,
-  otherModelOption,
-  PRESET_MODELS_BY_PROVIDER,
-  presetSelectValueForStoredModel,
-} from '../../lib/providerModels';
-import { PROVIDER_BASE_URLS, PROVIDER_OPTIONS } from '../../lib/providerUrls';
+  mapUserSettings,
+  READER_FONT_PX_DEFAULT,
+  READER_FONT_PX_MAX,
+  READER_FONT_PX_MIN,
+  READER_MARKDOWN_H2_OFFSET_PX,
+  OUTLINE_FONT_PX_DEFAULT,
+  OUTLINE_FONT_PX_MIN,
+  OUTLINE_FONT_PX_MAX,
+  OUTLINE_FONT_LS_KEY,
+  type UserSettingsRow,
+} from '../../lib/dbMappers';
+import { resolveAiSettingsForTask } from '../../lib/aiTaskSettings';
+import {
+  isReaderFontColumnUnavailableError,
+  isTaskAiBedrockColumnUnavailableError,
+  isThemeColumnUnavailableError,
+  isTtsColumnUnavailableError,
+} from '../../lib/themePersist';
+import { writeLocalTtsVoiceUri, readLocalTtsVoiceUri } from '../../lib/ttsVoiceLocalFallback';
+import { OTHER_MODEL_VALUE, PRESET_MODELS_BY_PROVIDER, presetSelectValueForStoredModel } from '../../lib/providerModels';
+import { BEDROCK_DEFAULT_REGION, defaultBaseUrlForProvider, PROVIDER_BASE_URLS } from '../../lib/providerUrls';
 import { TTS_CLOUD_NOTE, TTS_ENGINE_OPTIONS } from '../../lib/ttsEngines';
 import { useApp } from '../../context/AppContext';
-import type { Provider, UserSettings } from '../../types';
+import type { Provider, TaskAiOverrides, TaskAiProfile, UserSettings } from '../../types';
+import { AiProviderCredentialsFields, syncPresetAndModelForProvider } from './settings/AiProviderCredentialsFields';
 import { ThemeToggle } from './ThemeToggle';
 
 const TEST_SYSTEM = 'You are a ping endpoint. Reply with exactly: OK';
 
 const GEMINI_DOCS_MULTIMODAL_HREF = 'https://ai.google.dev/gemini-api/docs/prompting_with_media';
 const GEMINI_DOCS_MODELS_HREF = 'https://ai.google.dev/gemini-api/docs/models/gemini';
+
+function describeAiProfileError(
+  label: string,
+  trimmedModel: string,
+  trimmedKey: string,
+  trimmedBase: string,
+): string | null {
+  if (!trimmedModel || !trimmedKey || !trimmedBase) {
+    return `${label}: model, credentials, and base URL are required.`;
+  }
+  return null;
+}
+
+function cloneMainProfileIntoTaskOverride(
+  main: Pick<UserSettings, 'provider' | 'model' | 'apiKey' | 'baseUrl' | 'bedrockAccessKeyId' | 'bedrockRegion'>,
+): TaskAiProfile {
+  return {
+    provider: main.provider,
+    baseUrl: main.baseUrl.trim(),
+    model: main.model.trim(),
+    apiKey: main.apiKey.trim(),
+    bedrockAccessKeyId: main.provider === 'bedrock' ? main.bedrockAccessKeyId?.trim() : undefined,
+    bedrockRegion: main.provider === 'bedrock' ? main.bedrockRegion?.trim() || BEDROCK_DEFAULT_REGION : undefined,
+  };
+}
 
 export function SettingsPanel() {
   const { state, dispatch } = useApp();
@@ -29,6 +67,8 @@ export function SettingsPanel() {
   const [model, setModel] = useState('');
   const [apiKey, setApiKey] = useState('');
   const [baseUrl, setBaseUrl] = useState(PROVIDER_BASE_URLS.openrouter);
+  const [bedrockAccessKeyId, setBedrockAccessKeyId] = useState('');
+  const [bedrockRegion, setBedrockRegion] = useState(BEDROCK_DEFAULT_REGION);
   const [youtubeUrl, setYoutubeUrl] = useState('');
   const [ttsVoiceUri, setTtsVoiceUri] = useState('');
   const [readerFontPx, setReaderFontPx] = useState(READER_FONT_PX_DEFAULT);
@@ -42,6 +82,24 @@ export function SettingsPanel() {
   });
   const [browserVoices, setBrowserVoices] = useState<SpeechSynthesisVoice[]>([]);
   const [isKeyVisible, setIsKeyVisible] = useState(false);
+  const [hasChatTaskOverride, setHasChatTaskOverride] = useState(false);
+  const [chatOverrideProvider, setChatOverrideProvider] = useState<Provider>('openrouter');
+  const [chatOverridePreset, setChatOverridePreset] = useState('');
+  const [chatOverrideModel, setChatOverrideModel] = useState('');
+  const [chatOverrideApiKey, setChatOverrideApiKey] = useState('');
+  const [chatOverrideBaseUrl, setChatOverrideBaseUrl] = useState(PROVIDER_BASE_URLS.openrouter);
+  const [chatOverrideBedrockAccessKeyId, setChatOverrideBedrockAccessKeyId] = useState('');
+  const [chatOverrideBedrockRegion, setChatOverrideBedrockRegion] = useState(BEDROCK_DEFAULT_REGION);
+  const [isChatOverrideKeyVisible, setIsChatOverrideKeyVisible] = useState(false);
+  const [hasPdfTaskOverride, setHasPdfTaskOverride] = useState(false);
+  const [pdfOverrideProvider, setPdfOverrideProvider] = useState<Provider>('openrouter');
+  const [pdfOverridePreset, setPdfOverridePreset] = useState('');
+  const [pdfOverrideModel, setPdfOverrideModel] = useState('');
+  const [pdfOverrideApiKey, setPdfOverrideApiKey] = useState('');
+  const [pdfOverrideBaseUrl, setPdfOverrideBaseUrl] = useState(PROVIDER_BASE_URLS.openrouter);
+  const [pdfOverrideBedrockAccessKeyId, setPdfOverrideBedrockAccessKeyId] = useState('');
+  const [pdfOverrideBedrockRegion, setPdfOverrideBedrockRegion] = useState(BEDROCK_DEFAULT_REGION);
+  const [isPdfOverrideKeyVisible, setIsPdfOverrideKeyVisible] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isTesting, setIsTesting] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
@@ -58,9 +116,39 @@ export function SettingsPanel() {
     }
     setApiKey(settings.apiKey);
     setBaseUrl(settings.baseUrl);
+    setBedrockAccessKeyId(settings.bedrockAccessKeyId ?? '');
+    setBedrockRegion(settings.bedrockRegion ?? BEDROCK_DEFAULT_REGION);
     setYoutubeUrl(settings.youtubeUrl ?? '');
     setTtsVoiceUri(settings.ttsVoiceUri ?? readLocalTtsVoiceUri() ?? '');
     setReaderFontPx(settings.readerFontPx);
+
+    const chat = settings.taskAiOverrides?.chat;
+    setHasChatTaskOverride(Boolean(chat));
+    if (chat) {
+      setChatOverrideProvider(chat.provider);
+      setChatOverrideModel(chat.model);
+      setChatOverrideApiKey(chat.apiKey);
+      setChatOverrideBaseUrl(chat.baseUrl);
+      setChatOverrideBedrockAccessKeyId(chat.bedrockAccessKeyId ?? '');
+      setChatOverrideBedrockRegion(chat.bedrockRegion ?? BEDROCK_DEFAULT_REGION);
+      setChatOverridePreset(
+        chat.provider === 'custom' ? OTHER_MODEL_VALUE : presetSelectValueForStoredModel(chat.provider, chat.model),
+      );
+    }
+
+    const pdf = settings.taskAiOverrides?.pdfImport;
+    setHasPdfTaskOverride(Boolean(pdf));
+    if (pdf) {
+      setPdfOverrideProvider(pdf.provider);
+      setPdfOverrideModel(pdf.model);
+      setPdfOverrideApiKey(pdf.apiKey);
+      setPdfOverrideBaseUrl(pdf.baseUrl);
+      setPdfOverrideBedrockAccessKeyId(pdf.bedrockAccessKeyId ?? '');
+      setPdfOverrideBedrockRegion(pdf.bedrockRegion ?? BEDROCK_DEFAULT_REGION);
+      setPdfOverridePreset(
+        pdf.provider === 'custom' ? OTHER_MODEL_VALUE : presetSelectValueForStoredModel(pdf.provider, pdf.model),
+      );
+    }
   }, [settings]);
 
   useEffect(() => {
@@ -79,8 +167,18 @@ export function SettingsPanel() {
 
   useEffect(() => {
     if (provider === 'custom') return;
-    setBaseUrl(PROVIDER_BASE_URLS[provider]);
-  }, [provider]);
+    setBaseUrl(defaultBaseUrlForProvider(provider, bedrockRegion));
+  }, [provider, bedrockRegion]);
+
+  useEffect(() => {
+    if (chatOverrideProvider === 'custom') return;
+    setChatOverrideBaseUrl(defaultBaseUrlForProvider(chatOverrideProvider, chatOverrideBedrockRegion));
+  }, [chatOverrideProvider, chatOverrideBedrockRegion]);
+
+  useEffect(() => {
+    if (pdfOverrideProvider === 'custom') return;
+    setPdfOverrideBaseUrl(defaultBaseUrlForProvider(pdfOverrideProvider, pdfOverrideBedrockRegion));
+  }, [pdfOverrideProvider, pdfOverrideBedrockRegion]);
 
   useEffect(() => {
     if (!isSettingsPanelOpen) {
@@ -107,11 +205,38 @@ export function SettingsPanel() {
   const panelTitle = isFirstLaunch ? "Let's get you set up" : 'AI Settings';
   const panelSubtitle = isFirstLaunch ? 'Pick your AI provider and enter your API key.' : undefined;
 
-  async function handleTestConnection() {
-    setIsTesting(true);
-    setStatusMessage(null);
-    setErrorMessage(null);
-    const draft: UserSettings = {
+  const geminiApiKeyHelp: ReactNode = (
+    <div className="mt-1 space-y-1 text-xs text-gray-500 dark:text-gray-500">
+      <p>
+        Use a key from{' '}
+        <a
+          className="text-indigo-600 underline dark:text-indigo-400"
+          href="https://aistudio.google.com/apikey"
+          target="_blank"
+          rel="noreferrer"
+        >
+          Google AI Studio
+        </a>
+        . PDF import uses{' '}
+        <code className="rounded bg-gray-100 px-1 dark:bg-gray-800">generateContent</code> with{' '}
+        <code className="rounded bg-gray-100 px-1 dark:bg-gray-800">inlineData</code> (see{' '}
+        <a className="text-indigo-600 underline dark:text-indigo-400" href={GEMINI_DOCS_MULTIMODAL_HREF}>
+          prompting with media
+        </a>
+        )—the same path for Flash and Pro, even when a model page (e.g. Gemini&nbsp;3) emphasizes text and reasoning.
+      </p>
+      <p>
+        Official model ids change over time; pick from the list above, &quot;Other&quot;, or Google&apos;s{' '}
+        <a className="text-indigo-600 underline dark:text-indigo-400" href={GEMINI_DOCS_MODELS_HREF}>
+          Gemini models
+        </a>{' '}
+        reference.
+      </p>
+    </div>
+  );
+
+  function buildDraftUserSettings(taskOverrides: TaskAiOverrides | undefined): UserSettings {
+    return {
       userId: sessionUser.id,
       provider,
       baseUrl: baseUrl.trim(),
@@ -121,9 +246,55 @@ export function SettingsPanel() {
       readerFontPx,
       ttsEngine: 'browser',
       ttsVoiceUri: ttsVoiceUri.trim() || null,
+      bedrockAccessKeyId: provider === 'bedrock' ? bedrockAccessKeyId.trim() : undefined,
+      bedrockRegion: provider === 'bedrock' ? bedrockRegion.trim() || BEDROCK_DEFAULT_REGION : undefined,
+      taskAiOverrides: taskOverrides && Object.keys(taskOverrides).length > 0 ? taskOverrides : undefined,
     };
+  }
+
+  function buildTaskOverridesFromForm(prev: TaskAiOverrides | undefined): TaskAiOverrides {
+    const base: TaskAiOverrides = prev ? { ...prev } : {};
+    if (hasChatTaskOverride) {
+      base.chat = {
+        provider: chatOverrideProvider,
+        baseUrl: chatOverrideBaseUrl.trim(),
+        model: chatOverrideModel.trim(),
+        apiKey: chatOverrideApiKey.trim(),
+        bedrockAccessKeyId:
+          chatOverrideProvider === 'bedrock' ? chatOverrideBedrockAccessKeyId.trim() || undefined : undefined,
+        bedrockRegion:
+          chatOverrideProvider === 'bedrock'
+            ? chatOverrideBedrockRegion.trim() || BEDROCK_DEFAULT_REGION
+            : undefined,
+      };
+    } else {
+      delete base.chat;
+    }
+    if (hasPdfTaskOverride) {
+      base.pdfImport = {
+        provider: pdfOverrideProvider,
+        baseUrl: pdfOverrideBaseUrl.trim(),
+        model: pdfOverrideModel.trim(),
+        apiKey: pdfOverrideApiKey.trim(),
+        bedrockAccessKeyId:
+          pdfOverrideProvider === 'bedrock' ? pdfOverrideBedrockAccessKeyId.trim() || undefined : undefined,
+        bedrockRegion:
+          pdfOverrideProvider === 'bedrock' ? pdfOverrideBedrockRegion.trim() || BEDROCK_DEFAULT_REGION : undefined,
+      };
+    } else {
+      delete base.pdfImport;
+    }
+    return base;
+  }
+
+  async function handleTestConnection() {
+    setIsTesting(true);
+    setStatusMessage(null);
+    setErrorMessage(null);
+    const taskOverrides = buildTaskOverridesFromForm(settings?.taskAiOverrides);
+    const draft = buildDraftUserSettings(taskOverrides);
     try {
-      await callAI('Reply with OK only.', TEST_SYSTEM, draft);
+      await callAI('Reply with OK only.', TEST_SYSTEM, resolveAiSettingsForTask(draft, 'chat'));
       setStatusMessage('Connection succeeded.');
     } catch (e) {
       setErrorMessage(e instanceof Error ? e.message : 'Connection failed');
@@ -141,11 +312,43 @@ export function SettingsPanel() {
     const trimmedKey = apiKey.trim();
     const trimmedModel = model.trim();
     const trimmedBase = baseUrl.trim();
+    const trimmedBedrockAccess = bedrockAccessKeyId.trim();
 
-    if (!trimmedKey || !trimmedModel || !trimmedBase) {
-      setErrorMessage('Model, API key, and base URL are required.');
+    const mainErr = describeAiProfileError('Main AI profile', trimmedModel, trimmedKey, trimmedBase);
+    if (mainErr) {
+      setErrorMessage(mainErr);
       setIsSaving(false);
       return;
+    }
+
+    const taskOverrides = buildTaskOverridesFromForm(settings?.taskAiOverrides);
+
+    if (hasChatTaskOverride) {
+      const err = describeAiProfileError(
+        'Chat / tools override',
+        chatOverrideModel.trim(),
+        chatOverrideApiKey.trim(),
+        chatOverrideBaseUrl.trim(),
+      );
+      if (err) {
+        setErrorMessage(err);
+        setIsSaving(false);
+        return;
+      }
+    }
+
+    if (hasPdfTaskOverride) {
+      const err = describeAiProfileError(
+        'PDF import override',
+        pdfOverrideModel.trim(),
+        pdfOverrideApiKey.trim(),
+        pdfOverrideBaseUrl.trim(),
+      );
+      if (err) {
+        setErrorMessage(err);
+        setIsSaving(false);
+        return;
+      }
     }
 
     const payload = {
@@ -159,6 +362,9 @@ export function SettingsPanel() {
       reader_font_px: Math.min(READER_FONT_PX_MAX, Math.max(READER_FONT_PX_MIN, Math.round(readerFontPx))),
       tts_engine: 'browser',
       tts_voice_uri: ttsVoiceUri.trim() || null,
+      bedrock_access_key_id: provider === 'bedrock' ? trimmedBedrockAccess : null,
+      bedrock_region: provider === 'bedrock' ? bedrockRegion.trim() || BEDROCK_DEFAULT_REGION : null,
+      task_ai_overrides: taskOverrides,
       updated_at: new Date().toISOString(),
     };
 
@@ -205,6 +411,20 @@ export function SettingsPanel() {
       }
     }
 
+    if (upsertError && isTaskAiBedrockColumnUnavailableError(upsertError.message)) {
+      delete current.task_ai_overrides;
+      delete current.bedrock_access_key_id;
+      delete current.bedrock_region;
+      upsertError = (
+        await supabase.from('user_settings').upsert(current as never, { onConflict: 'user_id' })
+      ).error;
+      if (!upsertError) {
+        fallbackNotes.push(
+          'Per-task AI and Bedrock columns were skipped (missing migration or stale PostgREST cache). Apply supabase/migrations/006_user_settings_task_ai_bedrock.sql and run NOTIFY pgrst, \'reload schema\'; in the SQL editor.',
+        );
+      }
+    }
+
     if (!upsertError && fallbackNotes.length > 0) {
       setStatusMessage(fallbackNotes.join(' '));
     }
@@ -219,7 +439,9 @@ export function SettingsPanel() {
     try {
       localStorage.setItem(OUTLINE_FONT_LS_KEY, String(outlineFontPx));
       document.documentElement.style.setProperty('--study-helper-outline-font', `${outlineFontPx}px`);
-    } catch { /* ignore quota / private mode */ }
+    } catch {
+      /* ignore quota / private mode */
+    }
 
     const { data } = await supabase.from('user_settings').select('*').eq('user_id', sessionUser.id).single();
 
@@ -236,27 +458,92 @@ export function SettingsPanel() {
     dispatch({ type: 'SET_SETTINGS_PANEL', payload: false });
   }
 
-  function handleProviderChange(nextProvider: Provider) {
+  function handleMainProviderChange(nextProvider: Provider) {
     setProvider(nextProvider);
-    if (nextProvider === 'custom') {
-      setPresetSelectValue(OTHER_MODEL_VALUE);
-      return;
-    }
-    const list = PRESET_MODELS_BY_PROVIDER[nextProvider];
-    const first = list[0]?.value;
-    if (first) {
-      setPresetSelectValue(first);
-      setModel(first);
-      return;
-    }
-    setPresetSelectValue(OTHER_MODEL_VALUE);
+    const { presetSelectValue: nextPreset, model: nextModel } = syncPresetAndModelForProvider(nextProvider, model);
+    setPresetSelectValue(nextPreset);
+    setModel(nextModel);
   }
 
-  function handlePresetModelChange(value: string) {
+  function handleMainPresetModelChange(value: string) {
     setPresetSelectValue(value);
     if (value !== OTHER_MODEL_VALUE) {
       setModel(value);
     }
+  }
+
+  function handleChatOverrideProviderChange(nextProvider: Provider) {
+    setChatOverrideProvider(nextProvider);
+    const { presetSelectValue: nextPreset, model: nextModel } = syncPresetAndModelForProvider(
+      nextProvider,
+      chatOverrideModel,
+    );
+    setChatOverridePreset(nextPreset);
+    setChatOverrideModel(nextModel);
+  }
+
+  function handleChatOverridePresetChange(value: string) {
+    setChatOverridePreset(value);
+    if (value !== OTHER_MODEL_VALUE) {
+      setChatOverrideModel(value);
+    }
+  }
+
+  function handlePdfOverrideProviderChange(nextProvider: Provider) {
+    setPdfOverrideProvider(nextProvider);
+    const { presetSelectValue: nextPreset, model: nextModel } = syncPresetAndModelForProvider(
+      nextProvider,
+      pdfOverrideModel,
+    );
+    setPdfOverridePreset(nextPreset);
+    setPdfOverrideModel(nextModel);
+  }
+
+  function handlePdfOverridePresetChange(value: string) {
+    setPdfOverridePreset(value);
+    if (value !== OTHER_MODEL_VALUE) {
+      setPdfOverrideModel(value);
+    }
+  }
+
+  function copyMainIntoChatOverride() {
+    const next = cloneMainProfileIntoTaskOverride({
+      provider,
+      model,
+      apiKey,
+      baseUrl,
+      bedrockAccessKeyId,
+      bedrockRegion,
+    });
+    setChatOverrideProvider(next.provider);
+    setChatOverrideModel(next.model);
+    setChatOverrideApiKey(next.apiKey);
+    setChatOverrideBaseUrl(next.baseUrl);
+    setChatOverrideBedrockAccessKeyId(next.bedrockAccessKeyId ?? '');
+    setChatOverrideBedrockRegion(next.bedrockRegion ?? BEDROCK_DEFAULT_REGION);
+    setChatOverridePreset(
+      next.provider === 'custom' ? OTHER_MODEL_VALUE : presetSelectValueForStoredModel(next.provider, next.model),
+    );
+  }
+
+  function copyMainIntoPdfOverride() {
+    const next = cloneMainProfileIntoTaskOverride({
+      provider,
+      model,
+      apiKey,
+      baseUrl,
+      bedrockAccessKeyId,
+      bedrockRegion,
+    });
+    setPdfOverrideProvider(next.provider);
+    setPdfOverrideModel(next.model);
+    setPdfOverrideApiKey(next.apiKey);
+    setPdfOverrideBaseUrl(next.baseUrl);
+    setPdfOverrideBedrockAccessKeyId(next.bedrockAccessKeyId ?? '');
+    setPdfOverrideBedrockRegion(next.bedrockRegion ?? BEDROCK_DEFAULT_REGION);
+    setPdfOverridePreset(
+      next.provider === 'custom' ? OTHER_MODEL_VALUE : presetSelectValueForStoredModel(next.provider, next.model),
+    );
   }
 
   const providerSelectClass =
@@ -264,8 +551,7 @@ export function SettingsPanel() {
   const inputClass =
     'mt-1 block w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100';
 
-  const presetModelOptions =
-    provider === 'custom' ? [] : [...PRESET_MODELS_BY_PROVIDER[provider], otherModelOption()];
+  const checkboxLabelClass = 'mt-2 flex cursor-pointer items-start gap-2 text-sm text-gray-700 dark:text-gray-300';
 
   return (
     <div className="fixed inset-0 z-[60] flex justify-end">
@@ -371,125 +657,158 @@ export function SettingsPanel() {
             )}
           </div>
 
-          <label className="mt-6 text-sm font-medium text-gray-700 dark:text-gray-300" htmlFor="settings-provider">
-            Provider
-          </label>
-          <select
-            id="settings-provider"
-            className={providerSelectClass}
-            value={provider}
-            onChange={(e) => handleProviderChange(e.target.value as Provider)}
-          >
-            {PROVIDER_OPTIONS.map((opt) => (
-              <option key={opt.value} value={opt.value}>
-                {opt.label}
-              </option>
-            ))}
-          </select>
-
-          <label className="mt-4 text-sm font-medium text-gray-700 dark:text-gray-300" htmlFor="settings-model">
-            Model
-          </label>
-          {provider === 'custom' ? (
-            <input
-              id="settings-model"
-              className={inputClass}
-              value={model}
-              onChange={(e) => setModel(e.target.value)}
-              placeholder="Full model id for your endpoint"
-              autoComplete="off"
+          <div className="mt-6 border-t border-gray-200 pt-6 dark:border-gray-800">
+            <p className="text-sm font-medium text-gray-700 dark:text-gray-300">Default AI profile</p>
+            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+              Used everywhere unless you enable a per-task override below. Test connection uses the effective chat
+              profile (default or chat override).
+            </p>
+            <AiProviderCredentialsFields
+              idPrefix="settings-main"
+              provider={provider}
+              onProviderChange={handleMainProviderChange}
+              presetSelectValue={presetSelectValue}
+              onPresetModelChange={handleMainPresetModelChange}
+              model={model}
+              onModelChange={setModel}
+              apiKey={apiKey}
+              onApiKeyChange={setApiKey}
+              isKeyVisible={isKeyVisible}
+              onToggleKeyVisible={() => setIsKeyVisible((v) => !v)}
+              bedrockAccessKeyId={bedrockAccessKeyId}
+              onBedrockAccessKeyIdChange={setBedrockAccessKeyId}
+              bedrockRegion={bedrockRegion}
+              onBedrockRegionChange={setBedrockRegion}
+              baseUrl={baseUrl}
+              onBaseUrlChange={setBaseUrl}
+              providerSelectClass={providerSelectClass}
+              inputClass={inputClass}
+              geminiHelp={geminiApiKeyHelp}
             />
-          ) : (
-            <>
-              <select
-                id="settings-model-preset"
-                className={providerSelectClass}
-                value={presetSelectValue}
-                onChange={(e) => handlePresetModelChange(e.target.value)}
-              >
-                {presetModelOptions.map((opt) => (
-                  <option key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </option>
-                ))}
-              </select>
-              {presetSelectValue === OTHER_MODEL_VALUE && (
-                <input
-                  id="settings-model-custom"
-                  className={inputClass}
-                  value={model}
-                  onChange={(e) => setModel(e.target.value)}
-                  placeholder="Enter model id (e.g. from provider docs)"
-                  autoComplete="off"
-                />
-              )}
-            </>
-          )}
-
-          <label className="mt-4 text-sm font-medium text-gray-700 dark:text-gray-300" htmlFor="settings-api-key">
-            API Key
-          </label>
-          {provider === 'gemini' && (
-            <div className="mt-1 space-y-1 text-xs text-gray-500 dark:text-gray-500">
-              <p>
-                Use a key from{' '}
-                <a
-                  className="text-indigo-600 underline dark:text-indigo-400"
-                  href="https://aistudio.google.com/apikey"
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  Google AI Studio
-                </a>
-                . PDF import uses{' '}
-                <code className="rounded bg-gray-100 px-1 dark:bg-gray-800">generateContent</code> with{' '}
-                <code className="rounded bg-gray-100 px-1 dark:bg-gray-800">inlineData</code> (see{' '}
-                <a className="text-indigo-600 underline dark:text-indigo-400" href={GEMINI_DOCS_MULTIMODAL_HREF}>
-                  prompting with media
-                </a>
-                )—the same path for Flash and Pro, even when a model page (e.g. Gemini&nbsp;3) emphasizes text and
-                reasoning.
+            {provider === 'bedrock' && (
+              <p className="mt-3 text-xs text-gray-600 dark:text-gray-400">
+                Default auth is a Bedrock API key (Bearer), from the Bedrock console. Set region to match that console.
+                Optional IAM access key + secret still works (SigV4) if you fill the IAM access key ID field. Newer Claude
+                models usually need an inference profile id (e.g. us.anthropic.claude-sonnet-4-6), not only the base
+                anthropic.* id, for on-demand calls—see the Model list. If you still enter a bare foundation id for a
+                supported Claude 4.x model, the app maps it to a cross-region profile from your Region.
               </p>
-              <p>
-                Official model ids change over time; pick from the list above, &quot;Other&quot;, or Google&apos;s{' '}
-                <a className="text-indigo-600 underline dark:text-indigo-400" href={GEMINI_DOCS_MODELS_HREF}>
-                  Gemini models
-                </a>{' '}
-                reference.
-              </p>
-            </div>
-          )}
-          <div className="relative mt-1">
-            <input
-              id="settings-api-key"
-              className={`${inputClass} pr-10`}
-              type={isKeyVisible ? 'text' : 'password'}
-              value={apiKey}
-              onChange={(e) => setApiKey(e.target.value)}
-              autoComplete="off"
-            />
-            <button
-              type="button"
-              className="absolute right-2 top-1/2 -translate-y-1/2 rounded px-2 py-1 text-xs text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800"
-              onClick={() => setIsKeyVisible((v) => !v)}
-            >
-              {isKeyVisible ? 'Hide' : 'Show'}
-            </button>
+            )}
           </div>
 
-          <label className="mt-4 text-sm font-medium text-gray-700 dark:text-gray-300" htmlFor="settings-base-url">
-            Base URL
-          </label>
-          <input
-            id="settings-base-url"
-            className={inputClass}
-            value={baseUrl}
-            onChange={(e) => setBaseUrl(e.target.value)}
-            disabled={provider !== 'custom'}
-            autoComplete="off"
-          />
+          <div className="mt-8 border-t border-gray-200 pt-6 dark:border-gray-800">
+            <p className="text-sm font-medium text-gray-700 dark:text-gray-300">Per-task AI</p>
+            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+              Optional separate providers for chat-style tools vs PDF-derived text. Omitting an override uses the
+              default profile above.
+            </p>
 
-          <label className="mt-4 text-sm font-medium text-gray-700 dark:text-gray-300" htmlFor="settings-youtube">
+            <label className={checkboxLabelClass}>
+              <input
+                type="checkbox"
+                className="mt-1"
+                checked={hasChatTaskOverride}
+                onChange={(e) => {
+                  const checked = e.target.checked;
+                  setHasChatTaskOverride(checked);
+                  if (checked) {
+                    copyMainIntoChatOverride();
+                  }
+                }}
+              />
+              <span>
+                Custom profile for <span className="font-medium">chat &amp; tools</span> (Explain, Simplify,
+                extractions, …)
+              </span>
+            </label>
+            {hasChatTaskOverride && (
+              <div className="mt-2 rounded-lg border border-gray-200 p-3 dark:border-gray-700">
+                <button
+                  type="button"
+                  className="text-xs font-medium text-indigo-600 underline dark:text-indigo-400"
+                  onClick={copyMainIntoChatOverride}
+                >
+                  Copy from default profile
+                </button>
+                <AiProviderCredentialsFields
+                  idPrefix="settings-chat-override"
+                  provider={chatOverrideProvider}
+                  onProviderChange={handleChatOverrideProviderChange}
+                  presetSelectValue={chatOverridePreset}
+                  onPresetModelChange={handleChatOverridePresetChange}
+                  model={chatOverrideModel}
+                  onModelChange={setChatOverrideModel}
+                  apiKey={chatOverrideApiKey}
+                  onApiKeyChange={setChatOverrideApiKey}
+                  isKeyVisible={isChatOverrideKeyVisible}
+                  onToggleKeyVisible={() => setIsChatOverrideKeyVisible((v) => !v)}
+                  bedrockAccessKeyId={chatOverrideBedrockAccessKeyId}
+                  onBedrockAccessKeyIdChange={setChatOverrideBedrockAccessKeyId}
+                  bedrockRegion={chatOverrideBedrockRegion}
+                  onBedrockRegionChange={setChatOverrideBedrockRegion}
+                  baseUrl={chatOverrideBaseUrl}
+                  onBaseUrlChange={setChatOverrideBaseUrl}
+                  providerSelectClass={providerSelectClass}
+                  inputClass={inputClass}
+                  geminiHelp={geminiApiKeyHelp}
+                />
+              </div>
+            )}
+
+            <label className={checkboxLabelClass}>
+              <input
+                type="checkbox"
+                className="mt-1"
+                checked={hasPdfTaskOverride}
+                onChange={(e) => {
+                  const checked = e.target.checked;
+                  setHasPdfTaskOverride(checked);
+                  if (checked) {
+                    copyMainIntoPdfOverride();
+                  }
+                }}
+              />
+              <span>
+                Custom profile for <span className="font-medium">PDF import</span> (segment structuring and single-PDF
+                extract in Add chapter)
+              </span>
+            </label>
+            {hasPdfTaskOverride && (
+              <div className="mt-2 rounded-lg border border-gray-200 p-3 dark:border-gray-700">
+                <button
+                  type="button"
+                  className="text-xs font-medium text-indigo-600 underline dark:text-indigo-400"
+                  onClick={copyMainIntoPdfOverride}
+                >
+                  Copy from default profile
+                </button>
+                <AiProviderCredentialsFields
+                  idPrefix="settings-pdf-override"
+                  provider={pdfOverrideProvider}
+                  onProviderChange={handlePdfOverrideProviderChange}
+                  presetSelectValue={pdfOverridePreset}
+                  onPresetModelChange={handlePdfOverridePresetChange}
+                  model={pdfOverrideModel}
+                  onModelChange={setPdfOverrideModel}
+                  apiKey={pdfOverrideApiKey}
+                  onApiKeyChange={setPdfOverrideApiKey}
+                  isKeyVisible={isPdfOverrideKeyVisible}
+                  onToggleKeyVisible={() => setIsPdfOverrideKeyVisible((v) => !v)}
+                  bedrockAccessKeyId={pdfOverrideBedrockAccessKeyId}
+                  onBedrockAccessKeyIdChange={setPdfOverrideBedrockAccessKeyId}
+                  bedrockRegion={pdfOverrideBedrockRegion}
+                  onBedrockRegionChange={setPdfOverrideBedrockRegion}
+                  baseUrl={pdfOverrideBaseUrl}
+                  onBaseUrlChange={setPdfOverrideBaseUrl}
+                  providerSelectClass={providerSelectClass}
+                  inputClass={inputClass}
+                  geminiHelp={geminiApiKeyHelp}
+                />
+              </div>
+            )}
+          </div>
+
+          <label className="mt-6 text-sm font-medium text-gray-700 dark:text-gray-300" htmlFor="settings-youtube">
             YouTube playlist URL (optional)
           </label>
           <input

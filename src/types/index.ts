@@ -5,11 +5,30 @@ export type Provider =
   | 'gemini'
   | 'nvidia'
   | 'anthropic'
+  | 'bedrock'
   | 'custom';
 
 export type ThemePreference = 'light' | 'dark';
 
 export type TtsEngine = 'browser';
+
+/** Optional AI profile for a specific app surface (see Settings → Per-task AI). */
+export type AiTaskOverrideKey = 'chat' | 'pdfImport';
+
+export interface TaskAiProfile {
+  provider: Provider;
+  baseUrl: string;
+  model: string;
+  apiKey: string;
+  /**
+   * When `provider` is `bedrock`: optional IAM access key id for SigV4.
+   * Leave empty to use `apiKey` as a Bedrock API key (Bearer). Override may omit and use global.
+   */
+  bedrockAccessKeyId?: string;
+  bedrockRegion?: string;
+}
+
+export type TaskAiOverrides = Partial<Record<AiTaskOverrideKey, TaskAiProfile>>;
 
 export interface UserSettings {
   userId: string;
@@ -23,6 +42,15 @@ export interface UserSettings {
   readerFontPx: number;
   ttsEngine: TtsEngine;
   ttsVoiceUri: string | null;
+  /**
+   * When `provider` is `bedrock`: optional IAM access key id for SigV4 signing.
+   * If unset, `apiKey` is a Bedrock API key (Bearer, from the Bedrock console).
+   */
+  bedrockAccessKeyId?: string;
+  /** AWS region for the Bedrock Runtime host (default us-east-1). */
+  bedrockRegion?: string;
+  /** Per-task provider + credentials; omitted keys fall back to the main fields above. */
+  taskAiOverrides?: TaskAiOverrides;
 }
 
 export interface MasterTopic {
